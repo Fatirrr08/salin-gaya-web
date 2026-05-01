@@ -46,14 +46,26 @@ export default function SellerUploadProduct() {
     setPreviewUrls((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
-  const simulateAIAssessment = async (): Promise<boolean> => {
+  const simulateAIAssessment = async (): Promise<{ approved: boolean; reason?: string }> => {
     return new Promise((resolve) => {
-      // Simulasi proses AI (3 detik)
       setTimeout(() => {
-        // Mocking: Jika harga di atas 10.000.000, anggap gambar tidak valid (contoh kasus reject)
-        // Atau kita gunakan random logic 80% success
+        // Simulasi logika AI
+        // 80% kemungkinan lolos, 20% ditolak
         const isApproved = Math.random() > 0.2;
-        resolve(isApproved);
+        
+        if (isApproved) {
+          resolve({ approved: true });
+        } else {
+          // Pilih alasan acak untuk simulasi
+          const reasons = [
+            "Barang terdeteksi rusak atau cacat berlebihan.",
+            "Gambar terlalu buram dan tidak layak ditampilkan.",
+            "Konten gambar tidak pantas (melanggar pedoman komunitas).",
+            "Barang terdeteksi palsu (counterfeit) dari database AI."
+          ];
+          const randomReason = reasons[Math.floor(Math.random() * reasons.length)];
+          resolve({ approved: false, reason: randomReason });
+        }
       }, 3000);
     });
   };
@@ -77,15 +89,19 @@ export default function SellerUploadProduct() {
 
     try {
       // 1. Simulasi panggilan API ke Backend yang mem-trigger AI Quality Control
-      const isApproved = await simulateAIAssessment();
+      const assessment = await simulateAIAssessment();
 
-      if (!isApproved) {
+      if (!assessment.approved) {
         // AI Rejection Flow
-        toast.error("Produk Ditolak oleh AI", {
-          description: "Gambar produk terdeteksi BURAM atau TIDAK LAYAK. Silakan unggah foto yang lebih jelas.",
+        toast.error("Status: TIDAK LAYAK", {
+          description: assessment.reason || "Barang terdeteksi rusak atau tidak pantas.",
           duration: 5000,
         });
+        // Hapus state gambar sesuai spesifikasi
+        setImages([]);
+        setPreviewUrls([]);
         setIsSubmitting(false);
+        setAiAnalysisText("");
         return;
       }
 

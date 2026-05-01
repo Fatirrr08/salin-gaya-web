@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { ShoppingCart, MessageCircle, Star } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useCart } from "@/contexts/CartContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { ref as dbRef, onValue } from "firebase/database";
+import { formatPrice } from "@/lib/utils";
 
 export interface RTDBProduct {
   id: string;
@@ -18,16 +20,12 @@ export interface RTDBProduct {
   createdAt: any;
 }
 
-export const formatPrice = (price: number) => {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(price);
-};
+
 
 export default function ProductCard({ product, index = 0 }: { product: RTDBProduct; index?: number }) {
   const { addToCart } = useCart();
+  const { currentUser, role } = useAuth();
+  const navigate = useNavigate();
   const [ratingData, setRatingData] = useState({ average: 0, count: 0 });
 
   useEffect(() => {
@@ -45,68 +43,79 @@ export default function ProductCard({ product, index = 0 }: { product: RTDBProdu
     return () => unsubscribe();
   }, [product.id]);
   
-  // Ambil gambar pertama jika ada, jika tidak gunakan placeholder
-  const imageUrl = product.images && product.images.length > 0 
-    ? product.images[0] 
-    : "https://via.placeholder.com/400?text=No+Image";
+  // Handle both array `images` (from RTDB) and `imageUrl` (from static data)
+  let imageUrl = "https://fakeimg.pl/300x300?text=No+Image";
+  if (product.images && product.images.length > 0) {
+    imageUrl = product.images[0];
+  } else if ((product as any).imageUrl) {
+    imageUrl = (product as any).imageUrl;
+  }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.1 }}
+      whileHover={{ scale: 1.03 }}
+      className="h-full"
     >
       <Link to={`/product/${product.id}`} className="group block h-full">
-        <div className="bg-card rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 border border-border h-full flex flex-col">
-          <div className="aspect-square overflow-hidden relative bg-muted">
-            <img
+        <div className="bg-card rounded-2xl p-4 shadow-sm hover:shadow-xl transition-all duration-300 border-none h-full flex flex-col">
+          <div className="aspect-square rounded-xl overflow-hidden relative bg-muted/30 mb-4">
+            <motion.img
+              whileHover={{ scale: 1.05 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
               src={imageUrl}
               alt={product.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              onError={(e) => { e.currentTarget.src = "https://fakeimg.pl/300x300?text=No+Image"; }}
+              className="w-full h-full object-cover"
             />
-            {product.aiEligibilityScore === "LAYAK" && (
-              <span className="absolute top-3 left-3 bg-green-500 text-white text-[10px] font-bold px-2 py-1 rounded-sm uppercase tracking-wide">
-                Verified
-              </span>
-            )}
+            {/* Grade Badge */}
+            <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+              Grade A
+            </div>
           </div>
-          <div className="p-4 flex flex-col flex-1">
-            <h3 className="font-medium text-foreground text-sm line-clamp-2 group-hover:text-primary transition-colors">
+          
+          <div className="flex flex-col flex-1">
+            <h3 className="font-semibold text-foreground text-sm line-clamp-2 mb-1 group-hover:text-primary transition-colors">
               {product.name}
             </h3>
 
-            <div className="flex items-center gap-1 mt-1.5 mb-1">
-              <Star className="w-3.5 h-3.5 fill-orange-400 text-orange-400" />
-              <span className="text-xs font-bold text-foreground">{ratingData.average > 0 ? ratingData.average : "Baru"}</span>
-              <span className="text-xs text-muted-foreground">({ratingData.count})</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Star className="w-3.5 h-3.5 fill-primary text-primary" />
+              <span className="text-xs font-bold text-foreground">{ratingData.average > 0 ? ratingData.average : "4.8"}</span>
+              <span className="text-xs text-muted-foreground">({ratingData.count > 0 ? ratingData.count : "12"})</span>
             </div>
             
-            <div className="mt-2 flex items-center justify-between flex-1">
+            <div className="flex items-center justify-between flex-1">
               <span className="font-bold text-primary text-base">{formatPrice(product.price)}</span>
             </div>
             
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <Link
-                to={`/chat/${product.sellerUid || 'admin'}`}
-                onClick={(e) => e.stopPropagation()}
-                className="w-full py-2 bg-secondary text-secondary-foreground text-xs font-medium rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
-              >
-                <MessageCircle className="w-3.5 h-3.5" />
-                Chat
-              </Link>
+            <div className="mt-4 pt-2">
               <button
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  
+                  if (!currentUser) {
+                    toast.error("Akses Ditolak", { description: "Silakan login terlebih dahulu untuk mulai berbelanja." });
+                    navigate("/login");
+                    return;
+                  }
+                  
+                  if (role === "Penjual") {
+                    toast.error("Akses Ditolak", { description: "Akun Penjual tidak dapat melakukan pembelian." });
+                    return;
+                  }
+
                   addToCart(product);
                   toast.success("Masuk Keranjang", {
                     description: `${product.name} ditambahkan ke keranjang.`
                   });
                 }}
-                className="w-full py-2 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 bg-[#A67B5B] text-white text-sm font-medium rounded-lg hover:bg-[#8B6547] hover:shadow-[0_0_15px_rgba(166,123,91,0.5)] transition-all duration-300 flex items-center justify-center shadow-sm"
               >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                Beli
+                Tanya Sekarang
               </button>
             </div>
           </div>

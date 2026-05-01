@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Search, User, ShoppingBag, Menu, X, LogOut } from "lucide-react";
+import { Search, User, ShoppingCart, Menu, X, LogOut, Package } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
@@ -20,18 +20,20 @@ export default function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
-      <div className="container mx-auto flex items-center justify-between h-16 px-4">
-        <Link to="/" className="font-display text-2xl font-bold text-primary tracking-tight">
-          Salin Gaya
+      <div className="container mx-auto flex items-center justify-between h-20 px-4">
+        {/* Logo Left */}
+        <Link to="/" className="font-display text-2xl font-bold text-[#A67B5B] tracking-tight">
+          SalinGaya
         </Link>
 
-        <div className="hidden md:flex items-center gap-8">
+        {/* Links Center */}
+        <div className="hidden md:flex flex-1 justify-center items-center gap-10">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               to={link.href}
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                location.pathname === link.href ? "text-primary" : "text-muted-foreground"
+              className={`text-[13px] font-semibold uppercase tracking-wider transition-colors hover:text-[#A67B5B] ${
+                location.pathname === link.href ? "text-[#A67B5B]" : "text-muted-foreground"
               }`}
             >
               {link.label}
@@ -39,18 +41,22 @@ export default function Navbar() {
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Icons Right */}
+        <div className="flex items-center gap-4">
           <button className="p-2 rounded-full hover:bg-secondary transition-colors hidden sm:block">
-            <Search className="w-5 h-5 text-foreground" />
+            <Search className="w-[18px] h-[18px] text-foreground" />
           </button>
           
           {currentUser ? (
             <div className="flex items-center gap-2">
               <Link to="/profile" className="p-2 rounded-full hover:bg-secondary transition-colors" title="Profil">
-                <User className="w-5 h-5 text-primary" />
+                <User className="w-[18px] h-[18px] text-foreground" />
+              </Link>
+              <Link to="/orders" className="p-2 rounded-full hover:bg-secondary transition-colors" title="Pesanan">
+                <Package className="w-[18px] h-[18px] text-foreground" />
               </Link>
               {role === "Admin" && (
-                <Link to="/admin/dashboard" className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded hidden sm:block">
+                <Link to="/admin/dashboard" className="text-xs font-bold bg-[#A67B5B] text-primary-foreground px-2 py-1 rounded hidden sm:block">
                   Admin
                 </Link>
               )}
@@ -60,19 +66,19 @@ export default function Navbar() {
                 </Link>
               )}
               <button onClick={() => logout()} className="p-2 rounded-full hover:bg-red-50 text-red-500 transition-colors" title="Keluar">
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-[18px] h-[18px]" />
               </button>
             </div>
           ) : (
             <Link to="/login" className="p-2 rounded-full hover:bg-secondary transition-colors" title="Masuk">
-              <User className="w-5 h-5 text-foreground" />
+              <User className="w-[18px] h-[18px] text-foreground" />
             </Link>
           )}
 
           <Link to="/checkout" className="p-2 rounded-full hover:bg-secondary transition-colors relative" title="Keranjang">
-            <ShoppingBag className="w-5 h-5 text-foreground" />
+            <ShoppingCart className="w-[18px] h-[18px] text-foreground" />
             {totalItems > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-accent-foreground text-xs font-bold rounded-full flex items-center justify-center">
+              <span className="absolute top-0 right-0 w-4 h-4 bg-[#A67B5B] text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                 {totalItems}
               </span>
             )}

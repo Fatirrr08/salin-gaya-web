@@ -3,7 +3,7 @@ import { User, onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { ref, get, child } from "firebase/database";
 
-type Role = "Pembeli" | "Penjual" | null;
+type Role = "Pembeli" | "Penjual" | "Admin" | null;
 
 interface AuthContextType {
   currentUser: User | null;

@@ -1,5 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useState, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProductCard from "@/components/ProductCard";
@@ -70,15 +71,32 @@ export default function CategoryPage() {
           </select>
         </div>
 
-        {filtered.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-            {filtered.map((product, i) => (
-              <ProductCard key={product.id} product={product} index={i} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-center text-muted-foreground py-20">Tidak ada produk ditemukan.</p>
-        )}
+        <AnimatePresence mode="wait">
+          {filtered.length > 0 ? (
+            <motion.div 
+              key={slug || "all"}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+              className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6"
+            >
+              {filtered.map((product, i) => (
+                <ProductCard key={product.id} product={product} index={i} />
+              ))}
+            </motion.div>
+          ) : (
+            <motion.p 
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-center text-muted-foreground py-20"
+            >
+              Tidak ada produk ditemukan.
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
       <Footer />
     </div>

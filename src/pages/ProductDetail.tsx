@@ -9,7 +9,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { ref as dbRef, get, child, onValue, push, set, serverTimestamp } from "firebase/database";
 import { toast } from "sonner";
-import { formatPrice, RTDBProduct } from "@/components/ProductCard";
+import { RTDBProduct } from "@/components/ProductCard";
+import { formatPrice } from "@/lib/utils";
 
 interface Review {
   id: string;

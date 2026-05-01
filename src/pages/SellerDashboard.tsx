@@ -7,7 +7,8 @@ import { db, storage } from "@/lib/firebase";
 import { ref as dbRef, onValue, remove, update } from "firebase/database";
 import { ref as storageRef, deleteObject } from "firebase/storage";
 import { toast } from "sonner";
-import { RTDBProduct, formatPrice } from "@/components/ProductCard";
+import { RTDBProduct } from "@/components/ProductCard";
+import { formatPrice } from "@/lib/utils";
 import { Pencil, Trash2, Plus, Store, X, Save } from "lucide-react";
 
 export default function SellerDashboard() {

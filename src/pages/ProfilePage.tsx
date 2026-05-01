@@ -20,6 +20,9 @@ export default function ProfilePage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [aiText, setAiText] = useState("");
+  const [street, setStreet] = useState("");
+  const [city, setCity] = useState("");
+  const [province, setProvince] = useState("");
 
   useEffect(() => {
     if (!currentUser) {
@@ -38,6 +41,11 @@ export default function ProfilePage() {
           if (data.name && !currentUser.displayName) setName(data.name);
           if (data.photoURL) setPhotoURL(data.photoURL);
           if (data.gender) setGender(data.gender);
+          if (data.address) {
+            setStreet(data.address.street || "");
+            setCity(data.address.city || "");
+            setProvince(data.address.province || "");
+          }
         }
       } catch (e) {
         console.error("Failed to fetch user data:", e);
@@ -106,6 +114,11 @@ export default function ProfilePage() {
       // Update RTDB
       await update(dbRef(db, `users/${currentUser.uid}`), {
         name: name,
+        address: {
+          street: street,
+          city: city,
+          province: province
+        }
       });
       
       toast.success("Profil berhasil disimpan!");
@@ -229,6 +242,46 @@ export default function ProfilePage() {
                 disabled
                 className="w-full px-4 py-2.5 rounded-lg border border-border bg-secondary text-muted-foreground cursor-not-allowed"
               />
+            </div>
+
+            <h3 className="font-bold text-lg pt-4 border-t border-border mt-4">Alamat Lengkap</h3>
+            <p className="text-xs text-muted-foreground -mt-4 mb-2">
+              {role === "Penjual" ? "Alamat ini akan digunakan sebagai alamat Toko Anda (titik asal pengiriman)." : "Alamat ini akan digunakan sebagai alamat default tujuan pengiriman Anda."}
+            </p>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Provinsi</label>
+                <input 
+                  type="text" 
+                  placeholder="Contoh: Jawa Barat"
+                  value={province}
+                  onChange={(e) => setProvince(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Kota / Kabupaten</label>
+                <input 
+                  type="text" 
+                  placeholder="Contoh: Bandung"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Alamat Detail (Jalan, RT/RW, Patokan)</label>
+                <textarea 
+                  rows={3}
+                  placeholder="Contoh: Jl. Merdeka No. 123, RT 01/RW 02..."
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
             </div>
             
             <div className="pt-4">
