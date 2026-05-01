@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
-import { Search, User, ShoppingBag, Menu, X } from "lucide-react";
-import { useCart } from "@/hooks/useCart";
+import { Search, User, ShoppingBag, Menu, X, LogOut } from "lucide-react";
+import { useCart } from "@/contexts/CartContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -12,7 +13,8 @@ const navLinks = [
 ];
 
 export default function Navbar() {
-  const { count } = useCart();
+  const { totalItems } = useCart();
+  const { currentUser, logout, role } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
@@ -38,17 +40,40 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="p-2 rounded-full hover:bg-secondary transition-colors">
+          <button className="p-2 rounded-full hover:bg-secondary transition-colors hidden sm:block">
             <Search className="w-5 h-5 text-foreground" />
           </button>
-          <Link to="/login" className="p-2 rounded-full hover:bg-secondary transition-colors">
-            <User className="w-5 h-5 text-foreground" />
-          </Link>
-          <Link to="/cart" className="p-2 rounded-full hover:bg-secondary transition-colors relative">
+          
+          {currentUser ? (
+            <div className="flex items-center gap-2">
+              <Link to="/profile" className="p-2 rounded-full hover:bg-secondary transition-colors" title="Profil">
+                <User className="w-5 h-5 text-primary" />
+              </Link>
+              {role === "Admin" && (
+                <Link to="/admin/dashboard" className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded hidden sm:block">
+                  Admin
+                </Link>
+              )}
+              {role === "Penjual" && (
+                <Link to="/seller/dashboard" className="text-xs font-bold bg-secondary text-secondary-foreground px-2 py-1 rounded hidden sm:block">
+                  Penjual
+                </Link>
+              )}
+              <button onClick={() => logout()} className="p-2 rounded-full hover:bg-red-50 text-red-500 transition-colors" title="Keluar">
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <Link to="/login" className="p-2 rounded-full hover:bg-secondary transition-colors" title="Masuk">
+              <User className="w-5 h-5 text-foreground" />
+            </Link>
+          )}
+
+          <Link to="/checkout" className="p-2 rounded-full hover:bg-secondary transition-colors relative" title="Keranjang">
             <ShoppingBag className="w-5 h-5 text-foreground" />
-            {count > 0 && (
+            {totalItems > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-accent-foreground text-xs font-bold rounded-full flex items-center justify-center">
-                {count}
+                {totalItems}
               </span>
             )}
           </Link>
