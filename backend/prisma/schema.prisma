@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  EXPIRED
+}
+
+enum ProductEligibility {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  password_hash String    @db.VarChar(255)
+  role          UserRole  @default(BUYER)
+  full_name     String?   @db.VarChar(255)
+  phone         String?   @db.VarChar(20)
+  gender        String?   @db.VarChar(10)
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @default(now())
+
+  addresses     Address[]
+  store         Store?
+  orders        Order[]
+  reviews       Review[]
+}
+
+model Address {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String   @db.Uuid
+  address_line String   @db.Text
+  city         String?  @db.VarChar(100)
+  province     String?  @db.VarChar(100)
+  postal_code  String?  @db.VarChar(20)
+  latitude     Decimal? @db.Decimal(10, 8)
+  longitude    Decimal? @db.Decimal(11, 8)
+  is_primary   Boolean? @default(false)
+
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  stores       Store[]
+  orders       Order[]
+}
+
+model Store {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String   @unique @db.Uuid
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  address_id  String?  @db.Uuid
+  created_at  DateTime @default(now())
+
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  address     Address?  @relation(fields: [address_id], references: [id])
+  products    Product[]
+  orders      Order[]
+}
+
+model Product {
+  id                       String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  store_id                 String             @db.Uuid
+  name                     String             @db.VarChar(255)
+  description              String?            @db.Text
+  price                    Decimal            @db.Decimal(15, 2)
+  stock                    Int                @default(1)
+  condition                String?            @db.VarChar(50)
+  ai_eligibility_status    ProductEligibility @default(PENDING)
+  ai_gender_classification String?            @db.VarChar(50)
+  created_at               DateTime           @default(now())
+  updated_at               DateTime           @default(now())
+
+  store                    Store              @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  images                   ProductImage[]
+  order_items              OrderItem[]
+  reviews                  Review[]
+}
+
+model ProductImage {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id String   @db.Uuid
+  image_url  String   @db.Text
+  ai_score   Decimal? @db.Decimal(5, 2)
+  is_primary Boolean? @default(false)
+
+  product    Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  buyer_id            String?     @db.Uuid
+  store_id            String?     @db.Uuid
+  shipping_address_id String?     @db.Uuid
+  total_product_price Decimal     @db.Decimal(15, 2)
+  shipping_cost       Decimal     @db.Decimal(15, 2)
+  grand_total         Decimal     @db.Decimal(15, 2)
+  status              OrderStatus @default(PENDING)
+  tracking_number     String?     @db.VarChar(100)
+  courier_details     Json?
+  created_at          DateTime    @default(now())
+
+  buyer               User?       @relation(fields: [buyer_id], references: [id])
+  store               Store?      @relation(fields: [store_id], references: [id])
+  shipping_address    Address?    @relation(fields: [shipping_address_id], references: [id])
+  items               OrderItem[]
+  payments            Payment[]
+  reviews             Review[]
+}
+
+model OrderItem {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id          String  @db.Uuid
+  product_id        String? @db.Uuid
+  quantity          Int
+  price_at_checkout Decimal @db.Decimal(15, 2)
+
+  order             Order   @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product           Product? @relation(fields: [product_id], references: [id])
+}
+
+model Payment {
+  id                     String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id               String        @db.Uuid
+  gateway_transaction_id String?       @db.VarChar(255)
+  payment_method         String?       @db.VarChar(100)
+  bank_logo_url          String?       @db.Text
+  amount                 Decimal       @db.Decimal(15, 2)
+  status                 PaymentStatus @default(PENDING)
+  payment_url            String?       @db.Text
+  created_at             DateTime      @default(now())
+
+  order                  Order         @relation(fields: [order_id], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id   String?  @db.Uuid
+  product_id String?  @db.Uuid
+  user_id    String?  @db.Uuid
+  rating     Int?
+  comment    String?  @db.Text
+  created_at DateTime @default(now())
+
+  order      Order?   @relation(fields: [order_id], references: [id])
+  product    Product? @relation(fields: [product_id], references: [id])
+  user       User?    @relation(fields: [user_id], references: [id])
+}
