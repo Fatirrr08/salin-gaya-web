@@ -3,18 +3,19 @@ import { useNavigate } from "react-router-dom";
 import { MapPin, Truck, CreditCard, ChevronRight, CheckCircle2 } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatPrice } from "@/components/ProductCard";
+import { formatPrice } from "@/lib/utils";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import { ref as dbRef, push, set, serverTimestamp } from "firebase/database";
+import { ref as dbRef, push, set, serverTimestamp, get, child } from "firebase/database";
 
-const SHIPPING_RATES: Record<string, number> = {
-  JNE: 15000,
-  "J&T": 14000,
-  SiCepat: 12000,
-};
+// Base rates will be dynamically calculated
+const COURIERS = [
+  { id: "JNE", label: "JNE Regular" },
+  { id: "J&T", label: "J&T Express" },
+  { id: "SiCepat", label: "SiCepat REG" },
+];
 
 const PAYMENT_METHODS = [
   { id: "BCA", label: "Transfer BCA", type: "bank" },
@@ -29,11 +30,102 @@ export default function Checkout() {
   const navigate = useNavigate();
 
   const [address, setAddress] = useState("");
+  const [buyerCity, setBuyerCity] = useState("");
+  const [buyerProvince, setBuyerProvince] = useState("");
+  const [sellerAddresses, setSellerAddresses] = useState<Record<string, any>>({});
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
+  
   const [courier, setCourier] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const shippingCost = courier ? SHIPPING_RATES[courier] : 0;
+  // Fetch Buyer and Seller Addresses
+  React.useEffect(() => {
+    const fetchAddresses = async () => {
+      if (!currentUser) return;
+      setIsLoadingAddresses(true);
+      try {
+        const rootRef = dbRef(db);
+        
+        // 1. Fetch Buyer Address
+        const buyerSnap = await get(child(rootRef, `users/${currentUser.uid}/address`));
+        if (buyerSnap.exists()) {
+          const bAddress = buyerSnap.val();
+          setAddress(bAddress.street || "");
+          setBuyerCity(bAddress.city || "");
+          setBuyerProvince(bAddress.province || "");
+        }
+
+        // 2. Fetch Seller Addresses (unique sellers)
+        const uniqueSellerUids = Array.from(new Set(items.map(i => i.sellerUid || 'admin')));
+        const sellerData: Record<string, any> = {};
+        
+        await Promise.all(uniqueSellerUids.map(async (uid) => {
+          if (uid === 'admin') {
+            sellerData[uid] = { city: "Jakarta", province: "DKI Jakarta" }; // Mock admin address
+            return;
+          }
+          const sellerSnap = await get(child(rootRef, `users/${uid}/address`));
+          if (sellerSnap.exists()) {
+            sellerData[uid] = sellerSnap.val();
+          } else {
+            sellerData[uid] = { city: "Tidak diketahui", province: "Tidak diketahui" };
+          }
+        }));
+        
+        setSellerAddresses(sellerData);
+      } catch (error) {
+        console.error("Error fetching addresses:", error);
+      } finally {
+        setIsLoadingAddresses(false);
+      }
+    };
+
+    fetchAddresses();
+  }, [currentUser, items]);
+
+  // Group items by seller for UI
+  const itemsBySeller = React.useMemo(() => {
+    const groups: Record<string, typeof items> = {};
+    items.forEach(item => {
+      const sid = item.sellerUid || 'admin';
+      if (!groups[sid]) groups[sid] = [];
+      groups[sid].push(item);
+    });
+    return groups;
+  }, [items]);
+
+  // Calculate Dynamic Shipping Cost
+  const shippingCost = React.useMemo(() => {
+    if (!courier || !buyerCity) return 0;
+    
+    let totalShipping = 0;
+    
+    // Calculate shipping per seller
+    Object.keys(itemsBySeller).forEach(sellerUid => {
+      const sAddr = sellerAddresses[sellerUid] || {};
+      const sCity = sAddr.city || "";
+      const sProv = sAddr.province || "";
+      
+      let baseRate = 10000; // Base rate
+      
+      // Courier modifier
+      if (courier === "JNE") baseRate += 2000;
+      if (courier === "J&T") baseRate += 1000;
+      
+      // Distance mock logic
+      if (sProv.toLowerCase() !== buyerProvince.toLowerCase()) {
+        baseRate += 15000; // Beda provinsi
+      } else if (sCity.toLowerCase() !== buyerCity.toLowerCase()) {
+        baseRate += 5000; // Beda kota, provinsi sama
+      }
+      
+      totalShipping += baseRate;
+    });
+    
+    return totalShipping;
+  }, [courier, buyerCity, buyerProvince, sellerAddresses, itemsBySeller]);
+
   const grandTotal = subtotal + shippingCost;
 
   const handleCheckout = async () => {
@@ -62,7 +154,12 @@ export default function Checkout() {
       const orderData = {
         buyerUid: currentUser.uid,
         items: items,
-        shippingAddress: address,
+        shippingAddress: {
+          street: address,
+          city: buyerCity,
+          province: buyerProvince
+        },
+        senderAddresses: sellerAddresses,
         shippingCost: shippingCost,
         courier: courier,
         paymentMethod: paymentMethod,
@@ -110,13 +207,35 @@ export default function Checkout() {
                 <div>
                   <label className="text-sm font-medium mb-1.5 block">Detail Alamat Lengkap</label>
                   <textarea 
-                    rows={3} 
+                    rows={2} 
                     className="w-full px-4 py-3 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary"
                     placeholder="Jl. Sudirman No. 123, RT 01/RW 02..."
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     disabled={isProcessing}
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Kota Tujuan</label>
+                    <input 
+                      type="text" 
+                      className="w-full px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Kota..."
+                      value={buyerCity}
+                      onChange={(e) => setBuyerCity(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Provinsi</label>
+                    <input 
+                      type="text" 
+                      className="w-full px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Provinsi..."
+                      value={buyerProvince}
+                      onChange={(e) => setBuyerProvince(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <button 
                   type="button"
@@ -127,29 +246,60 @@ export default function Checkout() {
               </div>
             </section>
 
+            {/* Routes Summary */}
+            <section className="bg-card rounded-xl border border-border p-6 shadow-sm">
+              <h2 className="text-xl font-bold flex items-center gap-2 mb-4">
+                <Truck className="w-5 h-5 text-primary" /> Rute Pengiriman
+              </h2>
+              {isLoadingAddresses ? (
+                <p className="text-sm text-muted-foreground animate-pulse">Menghitung rute...</p>
+              ) : (
+                <div className="space-y-4">
+                  {Object.keys(itemsBySeller).map((sellerUid, index) => {
+                    const sCity = sellerAddresses[sellerUid]?.city || "Kota Penjual";
+                    const itemCount = itemsBySeller[sellerUid].length;
+                    return (
+                      <div key={sellerUid} className="flex items-start gap-3 p-3 bg-secondary/50 rounded-lg border border-border/50">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <span className="font-bold text-primary text-xs">#{index + 1}</span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            Pengiriman dari <span className="text-primary font-bold">{sCity}</span> menuju <span className="text-primary font-bold">{buyerCity || "(Isi Kota)"}</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Memuat {itemCount} barang</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
             {/* Courier Selection */}
             <section className="bg-card rounded-xl border border-border p-6 shadow-sm">
               <h2 className="text-xl font-bold flex items-center gap-2 mb-4">
-                <Truck className="w-5 h-5 text-primary" /> Jasa Pengiriman
+                <Truck className="w-5 h-5 text-primary" /> Ekspedisi
               </h2>
+              <p className="text-xs text-muted-foreground mb-4">Ongkos kirim akan dihitung per toko berdasarkan kota asal dan tujuan.</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {Object.keys(SHIPPING_RATES).map((key) => (
+                {COURIERS.map((c) => (
                   <label 
-                    key={key} 
-                    className={`border rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center text-center transition-all ${courier === key ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}
+                    key={c.id} 
+                    className={`border rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center text-center transition-all ${courier === c.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}
                   >
                     <input 
                       type="radio" 
                       name="courier" 
-                      value={key} 
+                      value={c.id} 
                       className="hidden" 
-                      checked={courier === key}
-                      onChange={() => setCourier(key)}
+                      checked={courier === c.id}
+                      onChange={() => setCourier(c.id)}
                       disabled={isProcessing}
                     />
-                    <span className="font-bold text-foreground mb-1">{key}</span>
-                    <span className="text-sm text-muted-foreground">{formatPrice(SHIPPING_RATES[key])}</span>
-                    {courier === key && <CheckCircle2 className="w-4 h-4 text-primary mt-2" />}
+                    <span className="font-bold text-foreground mb-1">{c.id}</span>
+                    <span className="text-xs text-muted-foreground">{c.label}</span>
+                    {courier === c.id && <CheckCircle2 className="w-4 h-4 text-primary mt-2" />}
                   </label>
                 ))}
               </div>

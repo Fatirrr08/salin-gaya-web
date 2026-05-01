@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useCart } from "@/hooks/useCart";
-import { formatPrice } from "@/lib/data";
+import { formatPrice } from "@/lib/utils";
 
 export default function CartPage() {
   const { items, total, updateQuantity, removeItem } = useCart();

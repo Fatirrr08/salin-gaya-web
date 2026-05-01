@@ -5,7 +5,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { db } from "@/lib/firebase";
 import { ref as dbRef, onValue } from "firebase/database";
-import { formatPrice } from "@/components/ProductCard";
+import { formatPrice } from "@/lib/utils";
 import { Users, ShoppingBag, Banknote, ShieldAlert, Activity } from "lucide-react";
 
 export default function AdminDashboard() {
