@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Salin Gaya</title>
+    <script>
+      /**
+       * SPA Redirect untuk GitHub Pages
+       * Sumber: https://github.com/rafgraph/spa-github-pages
+       *
+       * GitHub Pages mengembalikan 404 untuk setiap URL yang bukan file statis.
+       * Script ini menangkap 404 dan meredirect ke index.html dengan URL tersimpan
+       * di query string, lalu index.html akan merestorenya via History API.
+       */
+      var segmentCount = 1; // jumlah path segment repo (1 = /salin-gaya-web/)
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + segmentCount).join('/') + '/?/' +
+        l.pathname.slice(1).split('/').slice(segmentCount).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body>
+    <!-- Halaman ini berfungsi sebagai redirect — tidak akan terlihat oleh pengguna -->
+    <p>Mengarahkan ke halaman yang diminta...</p>
+  </body>
+</html>
