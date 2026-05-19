@@ -1,0 +1,32 @@
+
+> vite_react_shadcn_ts@0.0.0 build
+> vite build
+
+vite v5.4.19 building for production...
+transforming...
+Browserslist: browsers data (caniuse-lite) is 11 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+✓ 3028 modules transformed.
+x Build failed in 1.29s
+error during build:
+src/frontend/components/layout/Navbar.tsx (13:9): "subscribeToAdminChats" is not exported by "src/backend/services/chatService.ts", imported by "src/frontend/components/layout/Navbar.tsx".
+file: /Users/fatirgibran/Kuliah/salin-gaya-e-commerce/src/frontend/components/layout/Navbar.tsx:13:9
+
+11:   MessageCircle,
+12: } from "lucide-react";
+13: import { subscribeToAdminChats } from "@/backend/services/chatService";
+             ^
+14: import { collection, query, where, onSnapshot } from "firebase/firestore";
+15: import { dbFirestore } from "@/backend/config/firebase";
+
+    at getRollupError (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/parseAst.js:395:41)
+    at error (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/parseAst.js:391:42)
+    at Module.error (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:15535:16)
+    at Module.traceVariable (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:15984:29)
+    at ModuleScope.findVariable (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:13770:39)
+    at FunctionScope.findVariable (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:5252:38)
+    at FunctionBodyScope.findVariable (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:5252:38)
+    at ReturnValueScope.findVariable (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:5252:38)
+    at FunctionBodyScope.findVariable (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:5252:38)
+    at TrackingScope.findVariable (file:///Users/fatirgibran/Kuliah/salin-gaya-e-commerce/node_modules/rollup/dist/es/shared/node-entry.js:5252:38)

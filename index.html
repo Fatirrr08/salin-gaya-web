@@ -9,11 +9,29 @@
     <meta property="og:title" content="Salin Gaya - Platform Thrifting Premium" />
     <meta property="og:description" content="Temukan fashion secondhand berkualitas tinggi dengan harga terjangkau." />
     <meta property="og:type" content="website" />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <meta property="og:image" content="/logo.ico" />
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+    <meta property="og:image" content="./logo.ico" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="/logo.ico" />
+    <meta name="twitter:image" content="./logo.ico" />
+
+    <!--
+      SPA Routing untuk GitHub Pages — pasangan dari public/404.html
+      Sumber: https://github.com/rafgraph/spa-github-pages
+    -->
+    <script>
+      (function(l) {
+        if (l.search[1] === '/') {
+          var decoded = l.search.slice(1).split('&').map(function(s) {
+            return s.replace(/~and~/g, '&');
+          }).join('?');
+          window.history.replaceState(
+            null, null,
+            l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
+      }(window.location));
+    </script>
   </head>
 
   <body>

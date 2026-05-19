@@ -1,0 +1,79 @@
+name: 🚀 Build & Deploy ke GitHub Pages
+
+on:
+  push:
+    branches:
+      - main  # Trigger otomatis setiap push ke branch main
+
+  # Izinkan trigger manual dari tab Actions di GitHub
+  workflow_dispatch:
+
+# Izin untuk menulis ke GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Hanya satu deployment yang berjalan pada satu waktu
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────
+  # JOB 1: Build aplikasi Vite
+  # ─────────────────────────────────────────
+  build:
+    name: 🔨 Build Aplikasi
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout kode sumber
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      # ⚠️ KRITIS: Inject environment variables dari GitHub Secrets
+      # GitHub Actions tidak memiliki akses ke file .env lokal Anda
+      # Variabel ini akan tersedia sebagai import.meta.env.VITE_* di dalam kode React
+      - name: 🔐 Setup Environment Variables dari GitHub Secrets
+        run: |
+          echo "VITE_FONNTE_TOKEN=${{ secrets.VITE_FONNTE_TOKEN }}" >> .env
+          echo "VITE_GEMINI_API_KEY=${{ secrets.VITE_GEMINI_API_KEY }}" >> .env
+
+      - name: 🏗️ Build production (mode=production → base=/salin-gaya-web/)
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: ⚙️ Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: 📤 Upload artifact ke GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Folder output build Vite (default: dist/)
+          path: "./dist"
+
+  # ─────────────────────────────────────────
+  # JOB 2: Deploy ke GitHub Pages
+  # ─────────────────────────────────────────
+  deploy:
+    name: 🌐 Deploy ke GitHub Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build  # Tunggu job build selesai dulu
+
+    steps:
+      - name: 🚀 Deploy ke GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
