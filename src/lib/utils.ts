@@ -16,7 +16,7 @@ export const formatPrice = (price: number) => {
   }).format(price);
 };
 
-export const getValidImageUrl = (product: any): string => {
+export const getValidImageUrl = (product: any | string | undefined | null): string => {
   if (!product) return "";
   
   // 1. If it's a string, return the string itself
@@ -38,10 +38,11 @@ export const getValidImageUrl = (product: any): string => {
   return "";
 };
 
-export const translateAuthError = (error: any): string => {
-  if (!error || !error.code) return error?.message || "Terjadi kesalahan sistem. Silakan coba lagi.";
+export const translateAuthError = (error: unknown): string => {
+  const err = error as any;
+  if (!err || !err.code) return (err?.message as string) || "Terjadi kesalahan sistem. Silakan coba lagi.";
   
-  switch (error.code) {
+  switch (err.code) {
     case "auth/invalid-email":
       return "Format email tidak valid.";
     case "auth/user-not-found":

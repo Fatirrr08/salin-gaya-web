@@ -3,15 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/frontend/contexts/AuthContext";
 import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
-import { db } from "@/backend/config/firebase";
-import { ref as dbRef, onValue, update } from "firebase/database";
+import { db, dbFirestore } from "@/backend/config/firebase";
+import { ref as dbRef, onValue } from "firebase/database";
+import { collection, query, orderBy, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import { formatPrice, getValidImageUrl } from "@/lib/utils";
 import {
-  Users,
   ShoppingBag,
   Banknote,
   ShieldAlert,
-  Activity,
   Search,
   Eye,
   CheckCircle2,
@@ -22,39 +21,23 @@ import {
   XOctagon
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface Order {
-  id: string;
-  buyerUid: string;
-  items: any[];
-  totalAmount: number;
-  paymentStatus: string;
-  orderStatus: string;
-  paymentProofUrl?: string;
-  rejectionReason?: string;
-  createdAt: number;
-  [key: string]: any;
-}
+import { OrderData, OrderItem } from "@/backend/types";
 
 export default function PaymentValidation() {
   const { currentUser, role } = useAuth();
   const navigate = useNavigate();
 
-  const [metrics, setMetrics] = useState({
-    totalUsers: 0,
-    totalOrders: 0,
-    grossRevenue: 0,
-  });
 
-  const [orders, setOrders] = useState<Order[]>([]);
+
+  const [orders, setOrders] = useState<OrderData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Filters
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState("awaiting_validation");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("payment_uploaded");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modal
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<OrderData | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -73,44 +56,41 @@ export default function PaymentValidation() {
       // Fetch Users
       onValue(dbRef(db, "users"), (snapshot) => {
         if (snapshot.exists()) {
-          setMetrics((prev) => ({
-            ...prev,
-            totalUsers: Object.keys(snapshot.val()).length,
-          }));
+          // Do nothing or handle users data if needed
         }
       });
 
-      // Fetch Orders
-      onValue(dbRef(db, "orders"), (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const ordersArray: Order[] = Object.keys(data).map((key) => ({
-            id: key,
-            ...data[key],
-          }));
+      // Fetch Orders from Firestore
+      const q = query(collection(dbFirestore, "orders"), orderBy("createdAt", "desc"));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const ordersArray: OrderData[] = [];
+        snapshot.forEach(doc => {
+          ordersArray.push({ id: doc.id, ...doc.data() } as OrderData);
+        });
 
-          const revenue = ordersArray.reduce(
-            (acc, order) => acc + (order.totalAmount || 0),
-            0
-          );
+        const revenue = ordersArray.reduce(
+          (acc, order) => acc + (order.totalAmount || 0),
+          0
+        );
 
-          setMetrics((prev) => ({
-            ...prev,
-            totalOrders: ordersArray.length,
-            grossRevenue: revenue,
-          }));
 
-          ordersArray.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-          setOrders(ordersArray);
-        } else {
-          setMetrics((prev) => ({ ...prev, totalOrders: 0, grossRevenue: 0 }));
-          setOrders([]);
-        }
+
+        setOrders(ordersArray);
+        setIsLoading(false);
+      }, (error) => {
+        console.error("Error fetching orders:", error);
         setIsLoading(false);
       });
+
+      return () => {
+        unsubscribe();
+      };
     };
 
-    fetchData();
+    const cleanup = fetchData();
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, [currentUser, role, navigate]);
 
   const filteredOrders = useMemo(() => {
@@ -137,17 +117,26 @@ export default function PaymentValidation() {
     }
 
     const headers = ["Order ID", "Tanggal", "Nama Pembeli", "Total Tagihan", "Status Pembayaran"];
-    const rows = filteredOrders?.map(order => [
-      order.id,
-      new Date(order.createdAt).toLocaleDateString("id-ID"),
-      order.buyerUid,
-      order.totalAmount.toString(),
-      order.paymentStatus || order.status || "UNKNOWN"
-    ]);
+    const rows = filteredOrders?.map(order => {
+      let dateStr = "";
+      const createdAt = order.createdAt as any;
+      if (createdAt?.toDate) {
+        dateStr = createdAt.toDate().toLocaleDateString("id-ID");
+      } else if (order.createdAt) {
+        dateStr = new Date(order.createdAt as string).toLocaleDateString("id-ID");
+      }
+      return [
+        order.id,
+        dateStr,
+        order.userId || order.buyerUid || "-",
+        order.totalAmount.toString(),
+        order.paymentStatus || order.status || "UNKNOWN"
+      ];
+    });
 
     const csvContent = [
       headers.join(","),
-      ...rows?.map(row => row?.map(cell => `"${cell}"`).join(","))
+      ...(rows?.map(row => row?.map(cell => `"${cell}"`).join(",")) || [])
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -170,31 +159,34 @@ export default function PaymentValidation() {
 
     setIsProcessing(true);
     try {
-      const updates: any = {
+      const updates: Record<string, string> = {
         paymentStatus: status,
       };
 
       if (status === "paid") {
         updates.orderStatus = "processing";
         // Kurangi stok barang
-        selectedOrder.items.forEach((item: any) => {
+        selectedOrder.items.forEach(async (item: OrderItem) => {
           if (item.id) {
-            import("firebase/database").then(({ get }) => {
-              get(dbRef(db, `products/${item.id}`)).then((snap) => {
-                if (snap.exists()) {
-                  const currentStock = snap.val().stock || 0;
-                  const newStock = Math.max(0, currentStock - (item.quantity || 1));
-                  update(dbRef(db, `products/${item.id}`), { stock: newStock });
-                }
-              });
-            });
+            try {
+              const { getDoc } = await import("firebase/firestore");
+              const docRef = doc(dbFirestore, "products", item.id);
+              const snap = await getDoc(docRef);
+              if (snap.exists()) {
+                const currentStock = snap.data().stock || 0;
+                const newStock = Math.max(0, currentStock - (item.quantity || 1));
+                await updateDoc(docRef, { stock: newStock });
+              }
+            } catch (err) {
+              console.error("Failed to update stock", err);
+            }
           }
         });
       } else {
         updates.rejectionReason = rejectionReason;
       }
 
-      await update(dbRef(db, `orders/${selectedOrder.id}`), updates);
+      await updateDoc(doc(dbFirestore, "orders", selectedOrder.id), updates);
       
       if (status === "paid") {
         toast.success("✅ Pembayaran Berhasil Divalidasi", { duration: 3000 });
@@ -203,8 +195,8 @@ export default function PaymentValidation() {
       }
       setSelectedOrder(null);
       setRejectionReason("");
-    } catch (err: any) {
-      toast.error("Gagal memvalidasi pembayaran", { description: err.message });
+    } catch (err: unknown) {
+      toast.error("Gagal memvalidasi pembayaran", { description: (err as Error).message });
     } finally {
       setIsProcessing(false);
     }
@@ -213,7 +205,7 @@ export default function PaymentValidation() {
   const getPaymentBadge = (status: string) => {
     switch (status) {
       case "unpaid": return <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-md text-xs font-semibold">Belum Dibayar</span>;
-      case "awaiting_validation": return <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-xs font-semibold">Menunggu Validasi</span>;
+      case "payment_uploaded": return <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-xs font-semibold">Menunggu Validasi</span>;
       case "paid": return <span className="px-2 py-1 bg-green-100 text-green-800 rounded-md text-xs font-semibold">Lunas</span>;
       case "failed": return <span className="px-2 py-1 bg-red-100 text-red-800 rounded-md text-xs font-semibold">Ditolak</span>;
       default: return <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded-md text-xs font-semibold">{status}</span>;
@@ -250,7 +242,7 @@ export default function PaymentValidation() {
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Menunggu Validasi</p>
-              <p className="text-2xl font-bold">{orders?.filter(o => o.paymentStatus === "awaiting_validation").length}</p>
+              <p className="text-2xl font-bold">{orders?.filter(o => o.paymentStatus === "payment_uploaded").length}</p>
             </div>
           </div>
           <div className="bg-card rounded-2xl p-6 border border-border shadow-sm flex items-center gap-4">
@@ -295,7 +287,7 @@ export default function PaymentValidation() {
               >
                 <option value="ALL">Semua Status</option>
                 <option value="unpaid">Belum Dibayar</option>
-                <option value="awaiting_validation">Menunggu Validasi</option>
+                <option value="payment_uploaded">Menunggu Validasi</option>
                 <option value="paid">Lunas</option>
                 <option value="failed">Ditolak</option>
               </select>
@@ -332,10 +324,10 @@ export default function PaymentValidation() {
                         <span className="font-mono text-xs bg-secondary px-2 py-1 rounded text-foreground">{order.id.substring(1, 9).toUpperCase()}...</span>
                       </td>
                       <td className="p-4 text-sm text-muted-foreground">
-                        {new Date(order.createdAt).toLocaleDateString("id-ID")}
+                        {(order.createdAt as any)?.toDate ? (order.createdAt as any).toDate().toLocaleDateString("id-ID") : (order.createdAt ? new Date(order.createdAt as string).toLocaleDateString("id-ID") : "-")}
                       </td>
                       <td className="p-4 text-sm font-medium">
-                        <span className="truncate max-w-[150px] inline-block">{order.buyerUid}</span>
+                        <span className="truncate max-w-[150px] inline-block">{order.userId || order.buyerUid || "-"}</span>
                       </td>
                       <td className="p-4 font-bold text-foreground">
                         {formatPrice(order.totalAmount)}
@@ -382,9 +374,9 @@ export default function PaymentValidation() {
                 
                 <div className="space-y-3">
                   <p className="text-xs text-muted-foreground font-semibold uppercase">Barang Dibeli ({selectedOrder.items.length})</p>
-                  {selectedOrder?.items?.map((item: any, idx: number) => (
+                  {selectedOrder?.items?.map((item: OrderItem, idx: number) => (
                     <div key={idx} className="flex items-center gap-3 bg-secondary/20 p-2 rounded-lg border border-border/50">
-                      <img src={getValidImageUrl(item)} alt={item.name} className="w-10 h-10 rounded object-cover border border-border" />
+                      <img src={getValidImageUrl(item as any)} alt={item.name} className="w-10 h-10 rounded object-cover border border-border" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium line-clamp-1">{item.name}</p>
                         <p className="text-xs text-muted-foreground">{item.quantity}x @ {formatPrice(item.price)}</p>
@@ -409,13 +401,13 @@ export default function PaymentValidation() {
               <div className="flex-1 space-y-4 border-t md:border-t-0 md:border-l border-border pt-6 md:pt-0 md:pl-6">
                 <p className="text-xs text-muted-foreground font-semibold uppercase mb-2">Bukti Transfer</p>
                 
-                {selectedOrder.paymentProofUrl ? (
+                {selectedOrder.receiptUrl ? (
                   <div 
                     className="w-full aspect-[3/4] bg-secondary/50 rounded-xl border border-border overflow-hidden relative group cursor-pointer"
-                    onClick={() => setZoomedImage(selectedOrder.paymentProofUrl!)}
+                    onClick={() => setZoomedImage(selectedOrder.receiptUrl!)}
                   >
                     <img 
-                      src={selectedOrder.paymentProofUrl} 
+                      src={selectedOrder.receiptUrl} 
                       alt="Bukti Transfer" 
                       className="w-full h-full object-contain bg-black/5" 
                     />
@@ -434,7 +426,7 @@ export default function PaymentValidation() {
 
             {/* Modal Footer Actions */}
             <div className="p-5 border-t border-border bg-secondary/30">
-              {selectedOrder.paymentStatus === "awaiting_validation" ? (
+              {selectedOrder.paymentStatus === "payment_uploaded" || selectedOrder.paymentStatus === "pending_verification" ? (
                 <div className="space-y-4">
                   <div className="flex gap-3">
                     <button 

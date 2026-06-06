@@ -1,101 +1,123 @@
 import React from 'react';
-import { Link } from "react-router-dom";
-import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Minus, Plus, Trash2, ShoppingBag, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
-import { useCart } from "@/frontend/hooks/useCart";
-import { formatPrice } from "@/lib/utils";
+import { useCart } from "@/frontend/contexts/CartContext";
+import { formatPrice, getValidImageUrl } from "@/lib/utils";
 
 export default function CartPage() {
-  const { items, total, updateQuantity, removeItem } = useCart();
+  const { items, subtotal: total, updateQuantity, removeFromCart: removeItem } = useCart();
+  const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="font-display text-3xl font-bold text-foreground mb-8">
+      <div className="flex-1 container mx-auto px-4 py-6 sm:py-8 max-w-5xl">
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground mb-6 sm:mb-8">
           Keranjang
         </h1>
 
         {items.length === 0 ? (
-          <div className="text-center py-20">
-            <ShoppingBag className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground text-lg">
+          <div className="text-center py-16 sm:py-24">
+            <ShoppingBag className="w-14 h-14 sm:w-16 sm:h-16 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground text-base sm:text-lg mb-6">
               Keranjang kamu masih kosong
             </p>
             <Link
               to="/category/all"
-              className="inline-block mt-4 px-6 py-3 bg-primary text-primary-foreground font-medium rounded-lg hover:opacity-90 transition-opacity"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-medium rounded-lg hover:opacity-90 transition-opacity"
             >
-              Mulai Belanja
+              Mulai Belanja <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-4">
+          <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 lg:gap-8">
+            {/* ── Daftar Item ── */}
+            <div className="lg:col-span-2 space-y-3 sm:space-y-4">
               {items?.map((item, i) => (
                 <motion.div
-                  key={item.product.id}
+                  key={item.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex gap-4 p-4 bg-card rounded-xl border border-border"
+                  className="flex gap-3 sm:gap-4 p-3 sm:p-4 bg-card rounded-xl border border-border"
                 >
+                  {/* Gambar produk */}
                   <img
-                    src={item.product.image}
-                    alt={item.product.name}
-                    className="w-24 h-24 object-cover rounded-lg"
+                    src={getValidImageUrl(item as unknown as any)}
+                    alt={item.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-lg shrink-0"
                   />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-foreground truncate">
-                      {item.product.name}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      Grade {item.product.condition}
-                    </p>
-                    <p className="font-bold text-primary mt-1">
-                      {formatPrice(item.product.price)}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2">
+
+                  {/* Info produk */}
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    <div className="flex justify-between items-start gap-2">
+                      <h3 className="font-medium text-foreground text-sm sm:text-base line-clamp-2 flex-1">
+                        {item.name}
+                      </h3>
+                      {/* Tombol hapus — pojok kanan atas pada mobile */}
                       <button
-                        onClick={() =>
-                          updateQuantity(item.product.id, item.quantity - 1)
-                        }
-                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span className="text-sm font-medium w-8 text-center">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.product.id, item.quantity + 1)
-                        }
-                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => removeItem(item.product.id)}
-                        className="ml-auto p-2 text-muted-foreground hover:text-destructive transition-colors"
+                        onClick={() => removeItem(item.id)}
+                        className="p-1.5 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                        aria-label="Hapus item"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
+                    </div>
+
+                    <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                      Grade {(item as unknown as any).condition || "A"}
+                    </p>
+
+                    <div className="mt-auto pt-2 flex items-center justify-between">
+                      <p className="font-bold text-primary text-sm sm:text-base">
+                        {formatPrice(item.price || 0)}
+                      </p>
+
+                      {/* Qty controls */}
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <button
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity - 1)
+                          }
+                          className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
+                          aria-label="Kurangi"
+                        >
+                          <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                        <span className="text-sm font-medium w-6 text-center">
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity + 1)
+                          }
+                          className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
+                          aria-label="Tambah"
+                        >
+                          <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
               ))}
             </div>
 
-            <div className="bg-card rounded-xl border border-border p-6 h-fit sticky top-24">
+            {/* ── Ringkasan Pesanan ── */}
+            <div className="bg-card rounded-xl border border-border p-5 sm:p-6 h-fit lg:sticky lg:top-24">
               <h3 className="font-semibold text-foreground text-lg mb-4">
-                Ringkasan
+                Ringkasan Pesanan
               </h3>
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal</span>
+                  <span>
+                    Subtotal ({items.reduce((s, i) => s + i.quantity, 0)} item)
+                  </span>
                   <span>{formatPrice(total)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
@@ -107,9 +129,18 @@ export default function CartPage() {
                   <span>{formatPrice(total + 15000)}</span>
                 </div>
               </div>
-              <button className="mt-6 w-full py-3 bg-primary text-primary-foreground font-medium rounded-lg hover:opacity-90 transition-opacity">
-                Checkout
+              <button
+                onClick={() => navigate("/checkout")}
+                className="mt-5 sm:mt-6 w-full py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              >
+                Checkout <ArrowRight className="w-4 h-4" />
               </button>
+              <Link
+                to="/category/all"
+                className="mt-3 block text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Lanjut Belanja
+              </Link>
             </div>
           </div>
         )}

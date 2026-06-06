@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Star,
   ShoppingCart,
@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   Loader2,
   Send,
-  Image as ImageIcon,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import Navbar from "@/frontend/components/layout/Navbar";
@@ -30,7 +29,7 @@ import { RTDBProduct } from "@/frontend/components/layout/ProductCard";
 import { formatPrice, getValidImageUrl } from "@/lib/utils";
 import { products as localProducts } from "@/backend/types";
 
-import { sendMessage, getChatRoomId, createOrOpenChatSession } from "@/backend/services/chatService";
+import { getChatRoomId, createOrOpenChatSession } from "@/backend/services/chatService";
 
 interface Review {
   id: string;
@@ -83,7 +82,7 @@ export default function ProductDetail() {
             (p) => String(p.id) === String(id),
           );
           if (localProduct) {
-            setProduct(localProduct as any);
+            setProduct(localProduct as unknown as RTDBProduct);
             setSellerName(localProduct.seller || "Salin Gaya");
           }
         }
@@ -174,7 +173,7 @@ export default function ProductDetail() {
         <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
           <p className="text-muted-foreground mb-4">Gagal memuat data, silakan muat ulang.</p>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={() => navigate(0)}
             className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
           >
             Muat Ulang
@@ -222,7 +221,7 @@ export default function ProductDetail() {
         ).toFixed(1)
       : 0;
 
-  console.log("DATA DARI FIREBASE:", product);
+
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -244,7 +243,9 @@ export default function ProductDetail() {
             {getValidImageUrl(product) ? (
               <img
                 src={getValidImageUrl(product)}
-                alt={product.name}
+                alt={product?.name}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover absolute inset-0 z-10"
               />
             ) : (
@@ -259,13 +260,13 @@ export default function ProductDetail() {
             className="flex flex-col"
           >
             <div>
-              {product.aiEligibilityScore === "LAYAK" && (
+              {product?.aiEligibilityScore === "LAYAK" && (
                 <span className="inline-block bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs font-bold px-3 py-1 rounded-full mb-3 uppercase">
                   Verified by AI
                 </span>
               )}
               <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-2">
-                {product.name}
+                {product?.name}
               </h1>
 
               <div className="flex items-center gap-2 mt-2">
@@ -287,7 +288,7 @@ export default function ProductDetail() {
 
               <div className="mt-6 flex items-baseline gap-3">
                 <span className="text-3xl font-bold text-primary">
-                  {formatPrice(product.price)}
+                  {formatPrice(product?.price || 0)}
                 </span>
               </div>
 
@@ -296,7 +297,7 @@ export default function ProductDetail() {
                   Deskripsi Produk
                 </h3>
                 <p className="text-muted-foreground leading-relaxed text-sm whitespace-pre-wrap">
-                  {product.description}
+                  {product?.description}
                 </p>
               </div>
 
@@ -322,25 +323,25 @@ export default function ProductDetail() {
                   e.preventDefault();
                   if (!currentUser) {
                     toast.error("Akses Ditolak", {
-                      description:
-                        "Silakan login terlebih dahulu untuk mulai chat.",
+                      description: "Silakan login terlebih dahulu untuk mulai chat.",
                     });
                     navigate("/login");
                     return;
                   }
-                  if (role === "Penjual") {
-                    toast.error("Akses Ditolak", {
-                      description:
-                        "Akun Penjual tidak dapat melakukan chat/pembelian.",
-                    });
+
+                  const sellerId = product.sellerUid || null;
+                  if (!sellerId) {
+                    toast.error("Penjual tidak ditemukan untuk produk ini.");
                     return;
                   }
-                  
-                  const sellerId = product.sellerUid || "unknown_seller";
+                  if (currentUser.uid === sellerId) {
+                    toast.info("Ini adalah produk Anda sendiri.");
+                    return;
+                  }
+
                   const roomId = getChatRoomId(currentUser.uid, sellerId);
-                  
+
                   try {
-                    // Create parent chat document deterministically before navigating
                     await createOrOpenChatSession(
                       roomId,
                       currentUser.uid,
@@ -352,17 +353,15 @@ export default function ProductDetail() {
                       null,
                       "Penjual"
                     );
-                    
-                    // Navigate to inbox with chatId parameter as requested
-                    navigate(`/inbox?chatId=${roomId}`);
+                    navigate(`/inbox/${roomId}`);
                   } catch (err) {
                     console.error("Gagal membuat sesi chat:", err);
-                    toast.error("Gagal memulai chat");
+                    toast.error("Gagal memulai chat. Coba lagi.");
                   }
                 }}
                 className="px-6 py-3 border border-border text-foreground font-medium rounded-xl hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer"
               >
-                <MessageCircle className="w-5 h-5" /> Chat
+                <MessageCircle className="w-5 h-5" /> Chat Penjual
               </button>
             </div>
 

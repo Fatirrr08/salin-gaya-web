@@ -29,6 +29,9 @@ interface AIResult {
   scores: { label: string; value: number }[];
   summary: string;
   approved: boolean;
+  suggestedName?: string;
+  suggestedDescription?: string;
+  style?: string;
 }
 
 // ─── Shimmer Skeleton ─────────────────────────────────────────────────────────
@@ -178,8 +181,7 @@ async function generateCertificate(
 
 // ─── Gemini AI Assessor ───────────────────────────────────────────────────────
 async function callGeminiVision(
-  base64Image: string,
-  mimeType: string,
+  imagesData: { base64: string; mimeType: string }[],
 ): Promise<AIResult> {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey) {
@@ -189,27 +191,43 @@ async function callGeminiVision(
   }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-  const prompt = `Kamu adalah sistem AI Quality Control untuk platform thrifting premium "Salin Gaya".
-Analisis foto pakaian/barang fashion berikut dan berikan penilaian dalam format JSON SAJA (tanpa markdown, tanpa teks lain):
+  const prompt = `Kamu adalah sistem AI Quality Control & Asisten Copywriter untuk platform thrifting premium "Salin Gaya".
+Analisis foto-foto pakaian/barang fashion berikut dan berikan penilaian dalam format JSON murni.
+
+ATURAN WAJIB (STRICT RULES) UNTUK PENOLAKAN:
+1. HARUS FOTO ASLI: Jika gambar terdeteksi sebagai gambar dummy, ilustrasi, gambar kartun, 3D render, ATAU gambar hasil unduhan internet/katalog resmi merek (bukan jepretan kamera langsung dari penjual), BERIKAN grade "DITOLAK".
+2. BUKAN FASHION: Jika gambar menunjukkan benda yang bukan pakaian/fashion (contoh: makanan, elektronik, pemandangan), BERIKAN grade "DITOLAK".
+3. KONDISI HANCUR: Jika barang memiliki kerusakan fatal (robek parah, noda ekstrim menjijikkan), BERIKAN grade "DITOLAK".
+
 {
   "grade": "A" | "B" | "C" | "DITOLAK",
   "scores": [
     {"label": "Kebersihan", "value": <0-100>},
     {"label": "Keutuhan Warna", "value": <0-100>},
     {"label": "Tekstur & Kondisi Kain", "value": <0-100>},
-    {"label": "Kelayakan Jual", "value": <0-100>}
+    {"label": "Kelayakan Asli (Bukan Palsu/Dummy)", "value": <0-100>}
   ],
-  "summary": "<ringkasan singkat maks 100 karakter>",
-  "approved": <true jika grade A atau B, false jika C atau DITOLAK>
+  "summary": "<ringkasan singkat alasan penolakan atau penerimaan maksimal 100 karakter. Jika ditolak karena gambar dummy, tulis: 'Harap gunakan foto jepretan asli barang fisik yang Anda miliki.'>",
+  "approved": <true jika grade A atau B, false jika C atau DITOLAK>,
+  "suggestedName": "<Saran nama produk yang menarik untuk dijual, max 6 kata>",
+  "suggestedDescription": "<Saran deskripsi produk ala copywriter yang menarik pembeli thrift, sebutkan warnanya, modelnya, dll>",
+  "style": "<Gaya pakaian, misal: Vintage, Y2K, Streetwear, Casual, dll>"
 }
-Kriteria grade: A=semua skor ≥80, B=rata-rata ≥65, C=rata-rata ≥45, DITOLAK=ada kerusakan parah atau tidak layak.`;
+Kriteria grade normal (jika lolos aturan wajib): A=semua skor ≥80, B=rata-rata ≥65, C=rata-rata ≥45.`;
+
+  const inlineDataParts = imagesData.map(img => ({
+    inline_data: { mime_type: img.mimeType, data: img.base64 }
+  }));
 
   const body = {
+    generationConfig: {
+      response_mime_type: "application/json",
+    },
     contents: [
       {
         parts: [
           { text: prompt },
-          { inline_data: { mime_type: mimeType, data: base64Image } },
+          ...inlineDataParts,
         ],
       },
     ],
@@ -224,17 +242,9 @@ Kriteria grade: A=semua skor ≥80, B=rata-rata ≥65, C=rata-rata ≥45, DITOLA
   if (!res.ok) throw new Error("Gemini API error: " + res.status);
 
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
 
-  // Pembersihan Output JSON Berbasis Regex Agresif
-  let clean = text.trim();
-  // Buang markdown block ```json atau ``` di awal dan akhir
-  if (clean.startsWith("```")) {
-    clean = clean.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  }
-  clean = clean.trim();
-
-  return JSON.parse(clean) as AIResult;
+  return JSON.parse(text) as AIResult;
 }
 
 // ─── Utilitas Kompresi Gambar (Canvas) ────────────────────────────────────────
@@ -324,7 +334,7 @@ export default function SellerUploadProduct() {
     setImages((prev) => [...prev, ...newFiles]);
     setPreviewUrls((prev) => [
       ...prev,
-      ...newFiles?.map((f) => URL.createObjectURL(f)),
+      ...newFiles.map((f) => URL.createObjectURL(f)),
     ]);
     setAiResult(null);
     setCertificateUrl(null);
@@ -355,42 +365,54 @@ export default function SellerUploadProduct() {
     setCertificateUrl(null);
 
     try {
-      const firstImage = images[0];
-
-      if (firstImage.size > 10 * 1024 * 1024) {
-        toast.error("Ukuran file maksimal 10 MB!");
-        setIsAnalyzing(false);
-        return;
+      // Periksa ukuran semua gambar
+      for (const img of images) {
+        if (img.size > 10 * 1024 * 1024) {
+          toast.error(`Ukuran file ${img.name} maksimal 10 MB!`);
+          setIsAnalyzing(false);
+          return;
+        }
       }
 
-      // Kompres gambar otomatis sebelum dikirim ke AI
-      const { base64, mimeType } = await compressImageToBase64(
-        firstImage,
-        1024,
-        1024,
-        0.7,
+      // Kompres semua gambar secara otomatis sebelum dikirim ke AI
+      const compressedImages = await Promise.all(
+        images.map(async (img) => {
+          const { base64, mimeType } = await compressImageToBase64(img, 1024, 1024, 0.7);
+          const cleanBase64 = base64.includes(",") ? base64.split(",")[1] : base64;
+          return { base64: cleanBase64, mimeType };
+        })
       );
 
-      const cleanBase64 = base64.includes(",") ? base64.split(",")[1] : base64;
-
-      const result = await callGeminiVision(cleanBase64, mimeType);
+      const result = await callGeminiVision(compressedImages);
       setAiResult(result);
+      
+      // Asisten Auto-fill: Isi Judul & Deskripsi jika masih kosong
+      let appliedName = name;
+      if (result.suggestedName && !name) {
+         setName(result.suggestedName);
+         appliedName = result.suggestedName;
+      }
+      if (result.suggestedDescription && !description) {
+         setDescription(result.suggestedDescription + (result.style ? `\n\nStyle: ${result.style}` : ""));
+      }
 
       if (result.approved) {
         const certUrl = await generateCertificate(
-          name || "Produk",
+          appliedName || "Produk",
           result.grade,
           previewUrls[0],
           result.scores,
         );
         setCertificateUrl(certUrl);
-        toast.success(`Grade ${result.grade} — Barang layak dijual!`);
+        toast.success(`Grade ${result.grade} — Barang layak dijual!`, {
+          description: result.suggestedName && !name ? "AI telah otomatis mengisi Judul & Deskripsi untuk Anda!" : "",
+        });
       } else {
         toast.error(`Grade ${result.grade} — ${result.summary}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       let errorMsg = "Gagal menganalisis gambar.";
-      if (err.message) {
+      if ((err as Error).message) {
         if (err.message.includes("VITE_GEMINI_API_KEY")) {
           errorMsg =
             "Kunci API tidak valid atau belum diatur (VITE_GEMINI_API_KEY kosong).";
@@ -400,7 +422,7 @@ export default function SellerUploadProduct() {
         } else if (err instanceof SyntaxError) {
           errorMsg = "Format JSON dari AI gagal diproses. Silakan coba lagi.";
         } else {
-          errorMsg = err.message;
+          errorMsg = (err as Error).message;
         }
       }
 

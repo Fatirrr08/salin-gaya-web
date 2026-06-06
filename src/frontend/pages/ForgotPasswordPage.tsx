@@ -82,14 +82,13 @@ Terima kasih,
         toast.success("OTP berhasil dikirim ke WhatsApp!");
         return true;
       } else {
-        const errorReason =
-          data.reason || data.detail || "Gagal mengirim via API.";
+        const errorReason = data.reason || data.detail || "Gagal mengirim via API.";
         toast.error(`Gagal mengirim WA: ${errorReason}`);
         return false;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Gagal terhubung ke server WhatsApp", {
-        description: error.message,
+        description: (error as Error).message,
       });
       return false;
     }
@@ -137,8 +136,8 @@ Terima kasih,
           return;
         }
 
-        const userData = Object.values(snapshot.val())[0] as any;
-        setMatchedUserId(userData.uid);
+        const userData = Object.values(snapshot.val() as any)[0] as any;
+        setMatchedUserId(userData.uid as string);
 
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date().getTime() + 5 * 60 * 1000;
@@ -161,8 +160,8 @@ Terima kasih,
           description: "Masukkan Email atau Nomor HP yang valid.",
         });
       }
-    } catch (error: any) {
-      if (error.code === "auth/user-not-found") {
+    } catch (error: unknown) {
+      if ((error as any).code === "auth/user-not-found") {
         toast.error("Gagal", {
           description: "Email tidak terdaftar di sistem kami.",
         });
@@ -216,7 +215,7 @@ Terima kasih,
       toast.success("OTP Valid!", {
         description: "Silakan masukkan password baru Anda.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Terjadi kesalahan", {
         description: translateAuthError(error),
       });
@@ -245,7 +244,7 @@ Terima kasih,
           "Password berhasil diperbarui. Mengarahkan ke halaman login...",
       });
       setTimeout(() => navigate("/login"), 2000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Gagal", { description: translateAuthError(error) });
     } finally {
       setIsLoading(false);

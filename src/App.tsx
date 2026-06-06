@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy } from "react";
 import { Toaster } from "@/frontend/components/ui/toaster";
 import { AuthProvider } from "@/frontend/contexts/AuthContext";
 import { CartProvider } from "@/frontend/contexts/CartContext";
@@ -6,136 +6,163 @@ import { Toaster as Sonner } from "@/frontend/components/ui/sonner";
 import { TooltipProvider } from "@/frontend/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
 
 import ErrorBoundary from "@/frontend/components/ui/ErrorBoundary";
 import PageTransition from "@/frontend/components/layout/PageTransition";
 import { useScrollToTop } from "@/frontend/hooks/useScrollToTop";
-import { Skeleton } from "@/frontend/components/ui/skeleton";
 import ProtectedRoute from "@/frontend/components/layout/ProtectedRoute";
 import PublicRoute from "@/frontend/components/layout/PublicRoute";
+import LoadingSpinner from "@/frontend/components/ui/LoadingSpinner";
 
-// Lazy loading all pages for Route-based Code Splitting (Zero Impact Initial Load)
-const Index = lazy(() => import("@/frontend/pages/Index"));
-const CategoryPage = lazy(() => import("@/frontend/pages/CategoryPage"));
-const ProductDetail = lazy(() => import("@/frontend/pages/ProductDetail"));
-const CartPage = lazy(() => import("@/frontend/pages/CartPage"));
-const LoginPage = lazy(() => import("@/frontend/pages/LoginPage"));
-const RegisterPage = lazy(() => import("@/frontend/pages/RegisterPage"));
-const ForgotPasswordPage = lazy(() => import("@/frontend/pages/ForgotPasswordPage"));
-const ProfilePage = lazy(() => import("@/frontend/pages/ProfilePage"));
-const SellerUploadProduct = lazy(() => import("@/frontend/pages/SellerUploadProduct"));
-const SellerDashboard = lazy(() => import("@/frontend/pages/SellerDashboard"));
-const AdminDashboard = lazy(() => import("@/frontend/pages/AdminDashboard"));
-const PaymentValidation = lazy(() => import("@/frontend/pages/PaymentValidation"));
-const ChatPage = lazy(() => import("@/frontend/pages/ChatPage"));
-const Checkout = lazy(() => import("@/frontend/pages/Checkout"));
-const QRISPaymentPage = lazy(() => import("@/frontend/pages/QRISPaymentPage"));
-const OrderSuccessPage = lazy(() => import("@/frontend/pages/OrderSuccessPage"));
-const OrderHistory = lazy(() => import("@/frontend/pages/OrderHistory"));
-const NotFound = lazy(() => import("@/frontend/pages/NotFound"));
-const SearchPage = lazy(() => import("@/frontend/pages/SearchPage"));
+// ── Lazy with Retry ──────────────────────────────────────────────────────────
+// Resolves ChunkLoadError (White Screen of Death) by attempting a hard reload
+// ONCE if a chunk fails to fetch due to new deployments or network drops.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyWithRetry(componentImport: () => Promise<any>) {
+  return lazy(async () => {
+    const pageHasAlreadyBeenForceRefreshed = JSON.parse(
+      window.localStorage.getItem('page-has-been-force-refreshed') || 'false'
+    );
+    try {
+      const component = await componentImport();
+      window.localStorage.setItem('page-has-been-force-refreshed', 'false');
+      return component;
+    } catch (error: unknown) {
+      if (!pageHasAlreadyBeenForceRefreshed) {
+        const err = error as Error;
+        const isChunkLoadError = 
+          err?.message?.toLowerCase().includes('failed to fetch dynamically imported module') || 
+          err?.message?.toLowerCase().includes('chunk') ||
+          err?.name === 'ChunkLoadError';
+        
+        if (isChunkLoadError) {
+          window.localStorage.setItem('page-has-been-force-refreshed', 'true');
+          window.location.reload();
+          // Return pending promise to prevent React from rendering ErrorBoundary during reload
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return new Promise<{ default: React.ComponentType<any> }>(() => {});
+        }
+      }
+      throw error;
+    }
+  });
+}
 
-const queryClient = new QueryClient();
+// ── Lazy-loaded pages ────────────────────────────────────────────────────────
+// "Light" pages — appear quickly, minimal JS
+const Index            = lazyWithRetry(() => import("@/frontend/pages/Index"));
+const CategoryPage     = lazyWithRetry(() => import("@/frontend/pages/CategoryPage"));
+const SearchPage       = lazyWithRetry(() => import("@/frontend/pages/SearchPage"));
+const ProductDetail    = lazyWithRetry(() => import("@/frontend/pages/ProductDetail"));
+const NotFound         = lazyWithRetry(() => import("@/frontend/pages/NotFound"));
 
-// Skeleton loader untuk fallback Suspense
-const PageSkeleton = () => (
-  <div className="min-h-screen bg-background flex flex-col items-center p-8">
-    <div className="w-full max-w-7xl animate-pulse space-y-6">
-      <Skeleton className="h-16 w-full rounded-2xl bg-stone-200" />
-      <Skeleton className="h-[400px] w-full rounded-2xl bg-stone-200" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-        {[...Array(4)].map((_, i) => (
-          <Skeleton key={i} className="h-64 w-full rounded-2xl bg-stone-200" />
-        ))}
-      </div>
-    </div>
-  </div>
-);
+// Auth pages
+const LoginPage          = lazyWithRetry(() => import("@/frontend/pages/LoginPage"));
+const RegisterPage       = lazyWithRetry(() => import("@/frontend/pages/RegisterPage"));
+const ForgotPasswordPage = lazyWithRetry(() => import("@/frontend/pages/ForgotPasswordPage"));
 
+// User pages
+const ProfilePage      = lazyWithRetry(() => import("@/frontend/pages/ProfilePage"));
+const OrderHistoryPage = lazyWithRetry(() => import("@/frontend/pages/OrderHistoryPage"));
+const OrderSuccessPage = lazyWithRetry(() => import("@/frontend/pages/OrderSuccessPage"));
+const CartPage         = lazyWithRetry(() => import("@/frontend/pages/CartPage"));
+
+// "Heavy" pages — loaded on demand
+const Checkout          = lazyWithRetry(() => import(/* webpackChunkName: "checkout" */        "@/frontend/pages/Checkout"));
+const QRISPaymentPage   = lazyWithRetry(() => import(/* webpackChunkName: "qris" */            "@/frontend/pages/QRISPaymentPage"));
+const PaymentValidation = lazyWithRetry(() => import(/* webpackChunkName: "payment-admin" */   "@/frontend/pages/PaymentValidation"));
+const AdminDashboard    = lazyWithRetry(() => import(/* webpackChunkName: "admin-dashboard" */ "@/frontend/pages/AdminDashboard"));
+const Inbox             = lazyWithRetry(() => import(/* webpackChunkName: "inbox" */           "@/frontend/pages/Inbox"));
+
+// Seller pages
+const SellerUploadProduct = lazyWithRetry(() => import(/* webpackChunkName: "seller-upload" */ "@/frontend/pages/SellerUploadProduct"));
+const SellerDashboard     = lazyWithRetry(() => import(/* webpackChunkName: "seller-dash" */   "@/frontend/pages/SellerDashboard"));
+
+// ── React Query Client ───────────────────────────────────────────────────────
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AnimatedRoutes
+//
+// CRITICAL FIX — ErrorBoundary must be STABLE (not re-keyed on route change).
+// Previously: <ErrorBoundary key={location.pathname}> caused the Suspense
+// boundary to be unmounted/remounted mid-chunk-load → white screen.
+//
+// Fix:
+//   • ErrorBoundary sits OUTSIDE AnimatePresence (stable, never re-keyed).
+//   • AnimatePresence + Routes handle animation, keyed by location.key
+//     (React Router unique key per navigation, not just pathname).
+//   • Each lazy page is wrapped in its own per-route Suspense so the
+//     global LoadingSpinner is shown during chunk download, then
+//     PageTransition animates the fully-loaded content in.
+// ─────────────────────────────────────────────────────────────────────────────
 function AnimatedRoutes() {
   const location = useLocation();
-
   useScrollToTop();
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <ErrorBoundary key={location.pathname}>
-        <Suspense fallback={<PageSkeleton />}>
+    // ONE stable ErrorBoundary that never resets on navigation
+    <ErrorBoundary>
+      <PageTransition key={location.pathname}>
+        <Suspense fallback={<LoadingSpinner />}>
           <Routes location={location}>
-            {/* ── Public Routes ─────────────────────────────────────────── */}
-            <Route path="/" element={<PageTransition><Index /></PageTransition>} />
-            <Route path="/category/:slug" element={<PageTransition><CategoryPage /></PageTransition>} />
-            <Route path="/search" element={<PageTransition><SearchPage /></PageTransition>} />
-            <Route path="/product/:id" element={<PageTransition><ProductDetail /></PageTransition>} />
-            <Route path="/login" element={
-              <PublicRoute><PageTransition><LoginPage /></PageTransition></PublicRoute>
-            } />
-            <Route path="/register" element={
-              <PublicRoute><PageTransition><RegisterPage /></PageTransition></PublicRoute>
-            } />
-            <Route path="/forgot-password" element={
-              <PublicRoute><PageTransition><ForgotPasswordPage /></PageTransition></PublicRoute>
-            } />
+          {/* ── Public ── */}
+          <Route path="/" element={<Index />} />
+          <Route path="/category/:slug" element={<CategoryPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/product/:id" element={<ProductDetail />} />
 
-            {/* ── Protected Routes ──────────────────────────────────────── */}
-            <Route path="/cart" element={
-              <ProtectedRoute><PageTransition><CartPage /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/checkout" element={
-              <ProtectedRoute><PageTransition><Checkout /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/payment/qris" element={
-              <ProtectedRoute><PageTransition><QRISPaymentPage /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/order-success" element={
-              <ProtectedRoute><PageTransition><OrderSuccessPage /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/orders" element={
-              <ProtectedRoute><PageTransition><OrderHistory /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/profile" element={
-              <ProtectedRoute><PageTransition><ProfilePage /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/seller/upload" element={
-              <ProtectedRoute><PageTransition><SellerUploadProduct /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/seller/dashboard" element={
-              <ProtectedRoute><PageTransition><SellerDashboard /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/admin/dashboard" element={
-              <ProtectedRoute><PageTransition><AdminDashboard /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/admin/payments" element={
-              <ProtectedRoute><PageTransition><PaymentValidation /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/admin/chat" element={
-              <ProtectedRoute><PageTransition><ChatPage /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/chat/:targetUid" element={
-              <ProtectedRoute><PageTransition><ChatPage /></PageTransition></ProtectedRoute>
-            } />
-            <Route path="/inbox" element={
-              <ProtectedRoute><PageTransition><ChatPage /></PageTransition></ProtectedRoute>
-            } />
+          {/* ── Auth ── */}
+          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+          <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+          <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
 
-            {/* ── 404 ────────────────────────────────────────────────────── */}
-            <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
-          </Routes>
-        </Suspense>
-      </ErrorBoundary>
-    </AnimatePresence>
+          {/* ── Buyer (Protected) ── */}
+          <Route path="/cart" element={<ProtectedRoute><CartPage /></ProtectedRoute>} />
+          <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+          <Route path="/payment/qris" element={<ProtectedRoute><QRISPaymentPage /></ProtectedRoute>} />
+          <Route path="/order-success" element={<ProtectedRoute><OrderSuccessPage /></ProtectedRoute>} />
+          <Route path="/orders" element={<ProtectedRoute><OrderHistoryPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+
+          {/* ── Seller (Protected) ── */}
+          <Route path="/seller/upload" element={<ProtectedRoute><SellerUploadProduct /></ProtectedRoute>} />
+          <Route path="/seller/dashboard" element={<ProtectedRoute><SellerDashboard /></ProtectedRoute>} />
+
+          {/* ── Admin (Protected) ── */}
+          <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/payments" element={<ProtectedRoute><PaymentValidation /></ProtectedRoute>} />
+
+          {/* ── Inbox C2C ── */}
+          <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
+          <Route path="/inbox/:roomId" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
+
+          {/* ── Fallback ── */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+      </PageTransition>
+    </ErrorBoundary>
   );
 }
 
-// ── App root ───────────────────────────────────────────────────────────────────
+// ── App Root ─────────────────────────────────────────────────────────────────
 import { auth, db } from "@/backend/config/firebase";
 
 const App = () => {
   if (!auth || !db) {
     return (
       <div className="bg-[#F9F6F0] h-screen flex items-center justify-center text-[#5C3A21]">
-        Inisialisasi Sistem...
+        <LoadingSpinner label="Inisialisasi Sistem..." />
       </div>
     );
   }
@@ -145,11 +172,13 @@ const App = () => {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
-          <Sonner />
+          <Sonner richColors closeButton position="top-right" />
           <AuthProvider>
             <CartProvider>
               <BrowserRouter>
-                <AnimatedRoutes />
+                <div className="w-full overflow-x-hidden">
+                  <AnimatedRoutes />
+                </div>
               </BrowserRouter>
             </CartProvider>
           </AuthProvider>

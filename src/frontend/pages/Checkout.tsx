@@ -22,21 +22,18 @@ import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
 import MapModal from "@/frontend/components/ui/MapModal";
 import { toast } from "sonner";
-import { db } from "@/backend/config/firebase";
+import { db, dbFirestore } from "@/backend/config/firebase";
+import { collection, addDoc, serverTimestamp as firestoreTimestamp } from "firebase/firestore";
 import {
   ref as dbRef,
-  push,
-  set,
-  serverTimestamp,
   get,
   child,
 } from "firebase/database";
 
 const COURIERS = [
-  { id: "JNE", label: "JNE Regular", logo: "/images/JNE.png" },
-  { id: "J&T", label: "J&T Express", logo: "/images/J&T.png" },
-  { id: "SiCepat", label: "SiCepat REG", logo: "/images/Sicepat Ekspres.png" },
-  { id: "Ninja", label: "Ninja Xpress", logo: "/images/Ninja Xpress.png" },
+  { id: "JNE", label: "JNE Reguler", logo: "/images/JNE.png", rate: 15000 },
+  { id: "J&T", label: "J&T Express", logo: "/images/J&T.png", rate: 18000 },
+  { id: "SiCepat", label: "SiCepat HALU", logo: "/images/Sicepat Ekspres.png", rate: 12000 },
 ];
 
 const PAYMENT_CATEGORIES = [
@@ -65,6 +62,8 @@ const PAYMENT_CATEGORIES = [
     ],
   },
 ];
+const PLATFORM_FEE = 1000;
+const PAYMENT_FEE = 2000;
 
 export default function Checkout() {
   const { clearCart } = useCart();
@@ -105,33 +104,45 @@ export default function Checkout() {
   const [sellerAddresses, setSellerAddresses] = useState<Record<string, any>>(
     {},
   );
-  const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
+
 
   const [courier, setCourier] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showQrisModal, setShowQrisModal] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
+
+  // Inject Midtrans Snap Script
+  useEffect(() => {
+    const snapScript = "https://app.sandbox.midtrans.com/snap/snap.js";
+    const clientKey = import.meta.env.VITE_MIDTRANS_CLIENT_KEY;
+    
+    if (!clientKey) {
+      console.warn("Midtrans Client Key is missing in environment variables.");
+    }
+
+    const script = document.createElement("script");
+    script.src = snapScript;
+    script.setAttribute("data-client-key", clientKey);
+    script.async = true;
+
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   const [buyerLat, setBuyerLat] = useState<number | null>(null);
   const [buyerLng, setBuyerLng] = useState<number | null>(null);
-  const [shippingDetails, setShippingDetails] = useState<
-    Record<
-      string,
-      ShippingResult & {
-        distanceKm: number;
-        weightKg: number;
-        actualWeightKg: number;
-        volumetricWeightKg: number;
-      }
-    >
-  >({});
-  const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
+
 
   // Fetch Buyer and Seller Addresses
   React.useEffect(() => {
     const fetchAddresses = async () => {
       if (!currentUser) return;
-      setIsLoadingAddresses(true);
+      
       try {
         const rootRef = dbRef(db);
 
@@ -198,8 +209,9 @@ export default function Checkout() {
 
         setSellerAddresses(sellerData);
       } catch (error) {
+        console.error("Error fetching addresses", error);
       } finally {
-        setIsLoadingAddresses(false);
+        
       }
     };
 
@@ -209,12 +221,24 @@ export default function Checkout() {
   // Group items by seller for UI
   const itemsBySeller = React.useMemo(() => {
     const groups: Record<string, typeof items> = {};
-    items.forEach((item) => {
+    (Array.isArray(items) ? items : []).forEach((item) => {
       const sid = item.sellerUid || "admin";
       if (!groups[sid]) groups[sid] = [];
       groups[sid].push(item);
     });
     return groups;
+  }, [items]);
+
+  // State for shipping and weights
+  const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
+
+  const { totalWeightKg, totalWeightGrams } = React.useMemo(() => {
+    let grams = 0;
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      const wGram = (item as any).weight ? Number((item as any).weight) : 1000;
+      grams += wGram * (item.quantity || 1);
+    });
+    return { totalWeightGrams: grams, totalWeightKg: Math.ceil(grams / 1000) };
   }, [items]);
 
   // Calculate Dynamic Shipping Cost
@@ -226,7 +250,6 @@ export default function Checkout() {
       buyerLng === null ||
       Object.keys(sellerAddresses).length === 0
     ) {
-      setShippingDetails({});
       return;
     }
 
@@ -254,12 +277,12 @@ export default function Checkout() {
         let totalVolumetricKg = 0;
 
         items.forEach((item) => {
-          const wGram = (item as any).weight || 1000; // Fallback 1000 gram
+          const wGram = (item as any).weight ? Number((item as any).weight) : 1000; // Fallback 1000 gram
           const actualW = wGram / 1000;
 
-          const l = (item as any).length || 30; // Fallback 30cm
-          const w = (item as any).width || 20; // Fallback 20cm
-          const h = (item as any).height || 10; // Fallback 10cm
+          const l = (item as any).length ? Number((item as any).length) : 30; // Fallback 30cm
+          const w = (item as any).width ? Number((item as any).width) : 20; // Fallback 20cm
+          const h = (item as any).height ? Number((item as any).height) : 10; // Fallback 10cm
 
           const { billedWeight, actualWeight, volumetricWeight } =
             getBilledWeight(actualW, l, w, h);
@@ -279,12 +302,9 @@ export default function Checkout() {
           ...shippingRes,
           distanceKm,
           weightKg: totalWeightKg,
-          actualWeightKg: totalActualKg,
-          volumetricWeightKg: totalVolumetricKg,
         };
       });
 
-      setShippingDetails(details);
       setIsCalculatingShipping(false);
     }, 600);
 
@@ -292,13 +312,12 @@ export default function Checkout() {
   }, [courier, buyerCity, buyerLat, buyerLng, sellerAddresses, itemsBySeller]);
 
   const shippingCost = React.useMemo(() => {
-    return Object.values(shippingDetails).reduce(
-      (sum, detail) => sum + detail.totalCost,
-      0,
-    );
-  }, [shippingDetails]);
+    const selectedCourier = COURIERS.find(c => c.id === courier);
+    if (!selectedCourier) return 0;
+    return totalWeightKg * selectedCourier.rate;
+  }, [courier, totalWeightKg]);
 
-  const grandTotal = subtotal + shippingCost;
+  const grandTotal = subtotal + shippingCost + (courier ? PLATFORM_FEE + PAYMENT_FEE : 0);
 
   const handleCheckout = async () => {
     if (!currentUser) {
@@ -346,71 +365,121 @@ export default function Checkout() {
     }
 
     if (paymentMethod === "QRIS") {
-      const orderData = {
-        buyerUid: currentUser.uid,
-        items: items,
-        shippingAddress: {
-          street: address,
-          city: buyerCity,
-          province: buyerProvince,
-        },
-        senderAddresses: sellerAddresses,
-        shippingCost: shippingCost,
-        courier: courier,
-        paymentMethod: paymentMethod,
-        subtotal: subtotal,
-        totalAmount: grandTotal,
-      };
-
-      navigate("/payment/qris", { state: { orderData, grandTotal } });
+      setShowQrisModal(true);
       return;
     }
 
-    await processOrder();
+    // MIDTRANS SNAP PATH
+    setIsProcessingPayment(true);
+    
+    try {
+      const orderId = `ORDER-${Math.floor(Math.random() * 1000000)}-${Date.now()}`;
+      
+      const response = await fetch("http://localhost:5000/api/get-snap-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order_id: orderId,
+          gross_amount: grandTotal,
+          customer_details: {
+            first_name: currentUser.displayName || "Customer",
+            email: currentUser.email || "",
+          }
+        }),
+      }).catch(() => null);
+
+      if (response && response.ok) {
+        const data = await response.json();
+
+        if (data.token) {
+          const globalWindow = window as unknown as any;
+          if (globalWindow.snap) {
+            (globalWindow.snap as { pay: (token: string, options: any) => void }).pay(data.token, {
+              onSuccess: async function (_result: any) {
+                toast.success("Pembayaran berhasil!");
+                await processOrder("paid");
+              },
+              onPending: async function (_result: any) {
+                toast.info("Pembayaran tertunda/menunggu diselesaikan.");
+                await processOrder("unpaid");
+              },
+              onError: function (_result: any) {
+                toast.error("Pembayaran gagal!");
+              },
+              onClose: function () {
+                toast.info("Pembayaran ditutup sebelum selesai.");
+              }
+            });
+          } else {
+            toast.error("Sistem Midtrans gagal dimuat.");
+          }
+        } else {
+          toast.error("Gagal mendapatkan token: " + (data.error || "Kesalahan tidak diketahui"));
+        }
+      } else {
+        toast.info("Mode Demo: Memproses pembayaran tanpa server Midtrans.");
+        setTimeout(async () => {
+          await processOrder("pending_verification");
+        }, 1500);
+      }
+    } catch (error: unknown) {
+      toast.error("Gagal terhubung ke sistem pembayaran: " + (error as Error).message);
+    } finally {
+      setIsProcessingPayment(false);
+    }
   };
 
-  const processOrder = async () => {
+  const processOrder = async (overridePaymentStatus = "unpaid") => {
     setIsProcessing(true);
 
     try {
-      const ordersRef = dbRef(db, "orders");
-      const newOrderRef = push(ordersRef);
-
       const orderData = {
+        userId: currentUser.uid,
         buyerUid: currentUser.uid,
         items: items,
+        sellerUids: Array.from(new Set(items.map((item: any) => item.sellerUid || "admin"))),
+        trackingNumbers: {},
         shippingAddress: {
           street: address,
           city: buyerCity,
           province: buyerProvince,
         },
-        senderAddresses: sellerAddresses,
+        shippingMethod: courier,
         shippingCost: shippingCost,
+        platformFee: PLATFORM_FEE,
+        paymentFee: PAYMENT_FEE,
+        totalWeight: totalWeightGrams,
         courier: courier,
         paymentMethod: paymentMethod,
         subtotal: subtotal,
         totalAmount: grandTotal,
-        paymentStatus: "unpaid",
+        paymentStatus: overridePaymentStatus,
         paymentProofUrl: null,
         orderStatus: "pending",
-        createdAt: serverTimestamp(),
+        createdAt: firestoreTimestamp(),
       };
 
-      await set(newOrderRef, orderData);
+      await addDoc(collection(dbFirestore, "orders"), orderData);
 
       clearCart();
       toast.success("Pesanan Berhasil Dibuat!", {
-        description: "Mohon segera selesaikan pembayaran Anda.",
+        description: overridePaymentStatus === "pending_verification" 
+          ? "Pembayaran sedang diverifikasi admin." 
+          : "Mohon segera selesaikan pembayaran Anda.",
       });
 
-      // Simulasi pindah ke halaman invoice/dashboard
       setTimeout(() => {
-        navigate("/");
+        navigate("/order-success");
       }, 2000);
-    } catch (error: any) {
-      toast.error("Gagal memproses pesanan", { description: error.message });
+    } catch (error: unknown) {
+      toast.error("Gagal memproses pesanan", { description: (error as Error).message });
       setIsProcessing(false);
     }
+  };
+
+  const handleQrisPaid = async () => {
+    setShowQrisModal(false);
+    await processOrder("pending_verification");
   };
 
   return (
@@ -493,101 +562,27 @@ export default function Checkout() {
               </div>
             </section>
 
-            {/* Routes Summary */}
+            {/* Shipping Summary */}
             <section className="bg-card rounded-xl border border-border p-6 shadow-sm">
               <h2 className="text-xl font-bold flex items-center gap-2 mb-4">
-                <Truck className="w-5 h-5 text-primary" /> Rute Pengiriman
+                <Truck className="w-5 h-5 text-primary" /> Ringkasan Berat Pengiriman
               </h2>
-              {isLoadingAddresses ? (
-                <p className="text-sm text-muted-foreground animate-pulse">
-                  Menghitung rute...
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {Object.keys(itemsBySeller).map((sellerUid, index) => {
-                    const sCity =
-                      sellerAddresses[sellerUid]?.city || "Kota Penjual";
-                    const itemCount = itemsBySeller[sellerUid].length;
-                    const detail = shippingDetails[sellerUid];
-
-                    return (
-                      <div
-                        key={sellerUid}
-                        className="flex flex-col gap-2 p-3 bg-secondary/50 rounded-lg border border-border/50"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                            <span className="font-bold text-primary text-xs">
-                              #{index + 1}
-                            </span>
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-foreground">
-                              Pengiriman dari{" "}
-                              <span className="text-primary font-bold">
-                                {sCity}
-                              </span>{" "}
-                              menuju{" "}
-                              <span className="text-primary font-bold">
-                                {buyerCity || "(Isi Kota)"}
-                              </span>
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              Memuat {itemCount} barang
-                            </p>
-                          </div>
-                        </div>
-
-                        {detail && (
-                          <div className="mt-2 pt-2 border-t border-border/50 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground bg-card p-2 rounded-md">
-                            <div>
-                              Jarak:{" "}
-                              <span className="font-bold text-foreground">
-                                {detail.distanceKm} KM
-                              </span>
-                            </div>
-                            <div>
-                              Berat Aktual:{" "}
-                              <span className="font-bold text-foreground">
-                                {detail.actualWeightKg?.toFixed(2)} Kg
-                              </span>
-                            </div>
-                            <div>
-                              Berat Volumetrik:{" "}
-                              <span className="font-bold text-foreground">
-                                {detail.volumetricWeightKg?.toFixed(2)} Kg
-                              </span>
-                            </div>
-                            <div>
-                              Berat Tagih:{" "}
-                              <span className="font-bold text-primary">
-                                {detail.weightKg} Kg
-                              </span>
-                            </div>
-                            <div>
-                              Estimasi:{" "}
-                              <span className="font-bold text-foreground">
-                                {detail.estimatedDays}
-                              </span>
-                            </div>
-                            <div className="w-full mt-1">
-                              Tarif Rute:{" "}
-                              <span className="font-bold text-primary">
-                                {formatPrice(detail.totalCost)}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        {isCalculatingShipping && courier && !detail && (
-                          <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
-                            Memuat Kalkulasi...
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+              <div className="flex flex-col gap-2 p-4 bg-secondary/50 rounded-lg border border-border/50">
+                <div className="flex items-start justify-between">
+                  <div>
+                     <p className="text-sm font-medium text-foreground">Total Item</p>
+                     <p className="text-xs text-muted-foreground">{items.length} barang</p>
+                  </div>
+                  <div className="text-right">
+                     <p className="text-sm font-medium text-foreground">Total Berat</p>
+                     <p className="text-xs text-muted-foreground">{totalWeightGrams} gram</p>
+                  </div>
                 </div>
-              )}
+                <div className="mt-3 pt-3 border-t border-border/50 flex justify-between">
+                   <p className="text-sm font-bold text-foreground">Berat Ditagih (Pembulatan)</p>
+                   <p className="text-sm font-bold text-primary">{totalWeightKg} Kg</p>
+                </div>
+              </div>
             </section>
 
             {/* Courier Selection */}
@@ -596,8 +591,7 @@ export default function Checkout() {
                 <Truck className="w-5 h-5 text-primary" /> Ekspedisi
               </h2>
               <p className="text-xs text-muted-foreground mb-4">
-                Ongkir dihitung berdasarkan jarak dari lokasi penjual dan berat
-                paket (Aktual/Volumetrik) demi keadilan harga.
+                Ongkir dihitung secara dinamis: Total Berat (dibulatkan ke atas) dikali Tarif Dasar Kurir.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {COURIERS?.map((c) => (
@@ -701,17 +695,17 @@ export default function Checkout() {
               <h2 className="text-xl font-bold mb-4">Ringkasan Pesanan</h2>
 
               <div className="space-y-4 mb-6 max-h-[300px] overflow-y-auto pr-2">
-                {items.length === 0 ? (
+                {!items || items.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     Keranjang kosong
                   </p>
                 ) : (
                   items?.map((item: any) => (
-                    <div key={item.id} className="flex gap-3">
+                    <div key={item.id as string} className="flex gap-3">
                       <div className="w-16 h-16 rounded bg-muted overflow-hidden shrink-0 border border-border/50">
                         <img
                           src={getValidImageUrl(item)}
-                          alt={item.name}
+                          alt={item.name as string}
                           className="w-full h-full object-cover"
                         />
                       </div>
@@ -733,23 +727,36 @@ export default function Checkout() {
 
               <div className="space-y-3 border-t border-border pt-4 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal Produk</span>
+                  <span className="text-muted-foreground">Total Harga ({items.length} Barang)</span>
                   <span className="font-medium text-foreground">
                     {formatPrice(subtotal)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Ongkos Kirim</span>
+                  <span className="text-muted-foreground">Total Ongkos Kirim</span>
                   {isCalculatingShipping ? (
                     <span className="font-medium text-foreground animate-pulse">
                       ...
                     </span>
                   ) : (
                     <span className="font-medium text-foreground">
-                      {formatPrice(shippingCost)}
+                      {courier ? formatPrice(shippingCost) : "-"}
                     </span>
                   )}
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Biaya Layanan Aplikasi</span>
+                  <span className="font-medium text-foreground">
+                    {courier ? formatPrice(PLATFORM_FEE) : "-"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Biaya Penanganan</span>
+                  <span className="font-medium text-foreground">
+                    {courier ? formatPrice(PAYMENT_FEE) : "-"}
+                  </span>
+                </div>
+                
                 <div className="flex justify-between pt-3 border-t border-border mt-3">
                   <span className="font-bold text-base text-foreground">
                     Total Tagihan
@@ -764,10 +771,10 @@ export default function Checkout() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleCheckout}
-                disabled={isProcessing || items.length === 0}
+                disabled={isProcessing || isProcessingPayment || items.length === 0}
                 className="w-full mt-6 py-3.5 bg-primary text-primary-foreground font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
               >
-                {isProcessing ? "Memproses..." : "Bayar Sekarang"}{" "}
+                {isProcessing || isProcessingPayment ? "Memproses..." : "Bayar Sekarang"}{" "}
                 <ChevronRight className="w-5 h-5" />
               </motion.button>
 
@@ -802,6 +809,55 @@ export default function Checkout() {
           lng: addr.lng || 106.8456,
         }))}
       />
+
+      {/* QRIS Modal */}
+      <AnimatePresence>
+        {showQrisModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-card w-full max-w-sm rounded-2xl p-6 shadow-xl border border-border relative text-center"
+            >
+              <h3 className="text-xl font-bold mb-2">Pembayaran QRIS</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Pindai kode QR di bawah ini menggunakan aplikasi M-Banking atau E-Wallet Anda.
+              </p>
+              
+              <div className="bg-white p-4 rounded-xl inline-block mb-4 border border-border shadow-sm">
+                <img 
+                  src="/images/Qris.jpeg" 
+                  alt="QRIS Fatir" 
+                  className="w-64 h-64 mx-auto object-contain rounded-md" 
+                />
+              </div>
+
+              <div className="bg-secondary/50 p-3 rounded-lg border border-border mb-6">
+                <p className="text-xs text-muted-foreground mb-1">Total yang harus dibayar:</p>
+                <p className="text-xl font-bold text-primary">{formatPrice(grandTotal)}</p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleQrisPaid}
+                  disabled={isProcessing}
+                  className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {isProcessing ? "Memproses..." : "Saya Sudah Transfer"}
+                </button>
+                <button
+                  onClick={() => setShowQrisModal(false)}
+                  disabled={isProcessing}
+                  className="w-full py-2 text-sm text-muted-foreground hover:text-foreground font-medium transition-colors"
+                >
+                  Batalkan
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

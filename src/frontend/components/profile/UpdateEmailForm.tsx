@@ -34,8 +34,9 @@ export default function UpdateEmailForm({
         description: "Silakan cek kotak masuk pada email baru Anda.",
       });
       setNewEmail(""); // Reset input
-    } catch (error: any) {
-      switch (error.code) {
+    } catch (error: unknown) {
+      const err = error as any;
+      switch (err.code) {
         case "auth/requires-recent-login":
           toast.error("Sesi Berakhir", {
             description:
@@ -56,7 +57,7 @@ export default function UpdateEmailForm({
         default:
           toast.error("Terjadi Kesalahan", {
             description:
-              error.message || "Gagal mengirimkan tautan verifikasi email.",
+              (err as Error).message || "Gagal mengirimkan tautan verifikasi email.",
           });
           break;
       }

@@ -1,0 +1,45 @@
+rules_version = '2';
+
+// Craft rules based on path in your Firebase Storage bucket
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Fungsi bantuan keamanan
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    function isUnderLimit(megabytes) {
+      return request.resource.size < megabytes * 1024 * 1024;
+    }
+
+    // 1. PRODUCTS (Foto Baju Thrift)
+    match /products/{userId}/{fileName} {
+      allow read: if true; // Publik bisa melihat foto produk
+      // Hanya user yang bersangkutan yang bisa unggah foto di foldernya sendiri
+      // Harus berupa gambar dan ukuran maksimal 10 MB
+      allow write: if isAuthenticated() 
+                   && request.auth.uid == userId 
+                   && isImage() 
+                   && isUnderLimit(10);
+    }
+    
+    // 2. PAYMENT RECEIPTS (Bukti Pembayaran)
+    match /payment_receipts/{orderId}/{fileName} {
+      allow read: if isAuthenticated(); // Admin dan Seller/Buyer bisa lihat bukti
+      allow create: if isAuthenticated() 
+                    && isImage() 
+                    && isUnderLimit(5);
+      allow update, delete: if false; // Bukti transfer tidak boleh dihapus atau diubah setelah diunggah
+    }
+
+    // Default Fallback
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

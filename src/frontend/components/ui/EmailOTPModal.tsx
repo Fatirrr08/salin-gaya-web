@@ -15,23 +15,14 @@ interface EmailOTPModalProps {
   onSuccess: () => void;
 }
 
-// Simulasi fungsi pengiriman email via EmailJS
 export const sendOTPEmail = async (email: string, otpCode: string, name: string) => {
-  console.log(
-    `%c📧 MENGIRIM EMAIL KE: ${email}`,
-    "color: blue; font-weight: bold; font-size: 14px;"
-  );
-  console.log(
-    `%cSubjek: Kode Verifikasi Salin Gaya Anda: ${otpCode}\n\nHalo ${name},\n\nTerima kasih telah mendaftar di Salin Gaya.\nUntuk menyelesaikan proses registrasi dan memverifikasi akun Anda, silakan masukkan kode OTP 6 angka berikut pada halaman verifikasi:\n\n${otpCode}\n\n(Kode ini berlaku selama 10 menit).\n\nDemi keamanan, mohon JANGAN memberikan kode ini kepada siapa pun, termasuk pihak yang mengatasnamakan Salin Gaya.\n\nSalam hangat,\nTim Keamanan Salin Gaya`,
-    "color: green; font-family: monospace;"
-  );
   try {
     const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
     const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
     const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
 
     if (!serviceId || !templateId || !publicKey) {
-      console.warn("⚠️ Kredensial EmailJS belum lengkap di .env. Hanya menjalankan simulasi via console.");
+      // EmailJS credentials not configured — silent fallback (dev only)
       return true;
     }
 
@@ -45,11 +36,8 @@ export const sendOTPEmail = async (email: string, otpCode: string, name: string)
       },
       publicKey
     );
-    console.log("✅ Email OTP berhasil dikirim ke alamat " + email);
     return true;
-  } catch (error) {
-    console.error("❌ Gagal mengirim email via EmailJS:", error);
-    // Kita tetap return true agar tidak memblokir user jika EmailJS error (opsional)
+  } catch {
     return false;
   }
 };
@@ -148,8 +136,9 @@ export default function EmailOTPModal({
 
       toast.success("Email berhasil diverifikasi!");
       onSuccess();
-    } catch (error: any) {
-      toast.error("Gagal memverifikasi", { description: error.message });
+    } catch (error: unknown) {
+      console.error("Verification error:", error);
+      toast.error(`Verifikasi gagal: ${(error as Error).message}`);
     } finally {
       setIsLoading(false);
     }
@@ -162,8 +151,9 @@ export default function EmailOTPModal({
       toast.success("Kode OTP baru telah dikirim ke email Anda!");
       setCountdown(60);
       setOtp(["", "", "", "", "", ""]);
-    } catch (error: any) {
-      toast.error("Gagal mengirim ulang OTP", { description: error.message });
+    } catch (error: unknown) {
+      console.error("Resend error:", error);
+      toast.error(`Gagal mengirim ulang OTP: ${(error as Error).message}`);
     } finally {
       setIsLoading(false);
     }

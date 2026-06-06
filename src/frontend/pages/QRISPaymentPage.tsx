@@ -56,8 +56,8 @@ export default function QRISPaymentPage() {
       setTimeout(() => {
         navigate("/order-success");
       }, 1500);
-    } catch (error: any) {
-      toast.error("Gagal memproses pesanan", { description: error.message });
+    } catch (error: unknown) {
+      toast.error("Gagal memproses pesanan", { description: (error as Error).message });
       setIsProcessing(false);
     }
   };

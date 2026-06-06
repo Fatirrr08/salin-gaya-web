@@ -28,26 +28,10 @@ export default function UpdatePasswordForm() {
         description: "Password akun Anda telah berhasil diubah.",
       });
       setNewPassword(""); // Reset input
-    } catch (error: any) {
-      switch (error.code) {
-        case "auth/requires-recent-login":
-          toast.error("Sesi Berakhir", {
-            description:
-              "Sesi Anda sudah terlalu lama demi keamanan. Silakan logout dan login kembali sebelum mengubah password.",
-            duration: 6000,
-          });
-          break;
-        case "auth/weak-password":
-          toast.error("Password Lemah", {
-            description: "Silakan gunakan kombinasi password yang lebih kuat.",
-          });
-          break;
-        default:
-          toast.error("Terjadi Kesalahan", {
-            description: error.message || "Gagal mengubah password.",
-          });
-          break;
-      }
+    } catch (error: unknown) {
+      toast.error("Gagal mengubah password", {
+        description: (error as Error).message
+      });
     } finally {
       setIsUpdating(false);
     }

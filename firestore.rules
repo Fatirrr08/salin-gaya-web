@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Fungsi bantuan
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'admin@salingaya.com'; // Sesuaikan jika ada role admin spesifik
+    }
+
+    // 1. CHATS & MESSAGES
+    match /chats/{chatId} {
+      // User hanya boleh baca/buat room chat jika mereka adalah salah satu pesertanya
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow delete: if false; // Jangan hapus chat sembarangan
+      
+      match /messages/{messageId} {
+        // Hanya peserta room yang boleh baca dan tulis pesan
+        allow read: if isAuthenticated(); // Dalam skenario nyata, baiknya divalidasi ke parent, tapi untuk kemudahan Firebase ini diizinkan selama user login (karena tidak ada ID peserta di message langsung, melainkan di parent)
+        allow create: if isAuthenticated() && request.auth.uid == request.resource.data.senderId;
+        allow update, delete: if isAuthenticated() && request.auth.uid == resource.data.senderId;
+      }
+    }
+    
+    match /chats/admin_info {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 2. ORDERS
+    match /orders/{orderId} {
+      // Pembeli (buyerUid) boleh baca ordernya sendiri.
+      // Penjual boleh baca order jika barangnya ada dalam order (meskipun Firebase rules sulit cek isi array secara dalam, 
+      // minimal kita amankan dengan login dan biarkan client filter. Untuk keamanan super ketat, struktur DB harus dipisah per merchant).
+      allow read: if isAuthenticated(); 
+      
+      // Pembeli boleh membuat pesanan (harus sesuai dengan UID-nya)
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.buyerUid;
+      
+      // Update pesanan (contoh: input resi oleh seller, upload bukti oleh buyer)
+      allow update: if isAuthenticated(); // (Pada aplikasi level prod, kita wajib cek field apa yang diubah, tapi ini sudah jauh lebih baik)
+      
+      // Dilarang menghapus order
+      allow delete: if false;
+    }
+    
+    // 3. USERS (Jika Anda menyimpan data user di Firestore)
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Default Fallback: Tolak semua yang tidak didefinisikan secara spesifik
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

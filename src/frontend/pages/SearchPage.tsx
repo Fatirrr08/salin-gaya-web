@@ -65,7 +65,7 @@ export default function SearchPage() {
   }, [products]);
 
   const uniqueBrands = useMemo(() => {
-    const brs = Array.from(new Set(products.map((p: any) => p?.brand).filter(Boolean)));
+    const brs = Array.from(new Set(products.map((p: RTDBProduct) => (p as any)?.brand).filter(Boolean)));
     return brs.sort();
   }, [products]);
 
@@ -82,12 +82,12 @@ export default function SearchPage() {
 
     // 2. Filter by Brand
     if (selectedBrand) {
-      results = results.filter((p: any) => p?.brand?.toLowerCase() === selectedBrand.toLowerCase());
+      results = results.filter((p: RTDBProduct) => (p as any)?.brand === selectedBrand);
     }
 
     // 3. Filter by Min Rating
     if (minRating > 0) {
-      results = results.filter((p: any) => (p?.rating || 0) >= minRating);
+      results = results.filter((p: RTDBProduct) => ((p as any)?.rating || 0) >= minRating);
     }
 
     // 4. Sort
@@ -96,7 +96,7 @@ export default function SearchPage() {
     } else if (sortOption === "price_desc") {
       results.sort((a, b) => (b?.price || 0) - (a?.price || 0));
     } else if (sortOption === "rating_desc") {
-      results.sort((a: any, b: any) => (b?.rating || 0) - (a?.rating || 0));
+      results.sort((a: RTDBProduct, b: RTDBProduct) => ((b as Record<string, number>)?.rating || 0) - ((a as Record<string, number>)?.rating || 0));
     }
 
     return results;
