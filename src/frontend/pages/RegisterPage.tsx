@@ -19,15 +19,12 @@ import {
   get,
   child,
   set,
-  query,
-  orderByChild,
-  equalTo,
   remove,
 } from "firebase/database";
 import { toast } from "sonner";
-import EmailOTPModal, { generateAndSendEmailOTP } from "@/frontend/components/ui/EmailOTPModal";
-
-import { translateAuthError, SYSTEM_MASTER_PASSWORD } from "@/lib/utils";
+import emailjs from "@emailjs/browser";
+import { generateSixDigitOTP } from "@/backend/services/authService";
+import { translateAuthError } from "@/lib/utils";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -42,8 +39,7 @@ export default function RegisterPage() {
 
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [pendingUser, setPendingUser] = useState<User | null>(null);
-  const [showEmailOTP, setShowEmailOTP] = useState(false);
-  const [uidToVerify, setUidToVerify] = useState("");
+  const [sessionId, setSessionId] = useState("");
   const [verificationMethod, setVerificationMethod] = useState<"phone" | "email">("phone");
   const navigate = useNavigate();
 
@@ -63,7 +59,7 @@ export default function RegisterPage() {
     }
   };
 
-  const handleSocialLogin = async (provider: any) => {
+  const handleSocialLogin = async (provider: import("firebase/auth").AuthProvider) => {
     setIsLoading(true);
     try {
       const result = await signInWithPopup(auth, provider);
@@ -82,9 +78,9 @@ export default function RegisterPage() {
         toast.success("Berhasil mendaftar/masuk!");
         redirectUser(userRole);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Gagal menggunakan social login", {
-        description: translateAuthError(error),
+        description: translateAuthError(error as Error),
       });
       setIsLoading(false);
     }
@@ -105,9 +101,9 @@ export default function RegisterPage() {
       });
       toast.success("Berhasil mendaftar!");
       redirectUser(selectedRole);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Gagal menyimpan role", {
-        description: translateAuthError(error),
+        description: translateAuthError(error as Error),
       });
     } finally {
       setIsLoading(false);
@@ -153,74 +149,94 @@ Terima kasih,
         toast.success("OTP berhasil dikirim ke WhatsApp!");
         return true;
       } else {
-        const errorReason =
-          data.reason || data.detail || "Gagal mengirim via API.";
+        const errorReason = data.reason || data.detail || "Gagal mengirim via API.";
         toast.error(`Gagal mengirim WA: ${errorReason}`);
         return false;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Gagal terhubung ke server WhatsApp", {
-        description: error.message,
+        description: (error as Error).message,
       });
       return false;
     }
   };
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleRegisterFlow = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !password || !phone) {
+    if (!name || !email || !password || (verificationMethod === "phone" && !phone)) {
       toast.error("Mohon lengkapi semua data registrasi");
       return;
     }
 
     setIsLoading(true);
     try {
-      const formattedPhone = phone.startsWith("0")
-        ? `+62${phone.slice(1)}`
-        : phone.startsWith("+")
-          ? phone
-          : `+62${phone}`;
+      if (verificationMethod === "phone") {
+        const formattedPhone = phone.startsWith("0")
+          ? `+62${phone.slice(1)}`
+          : phone.startsWith("+")
+            ? phone
+            : `+62${phone}`;
 
-      const usersRef = ref(db, "users");
-      const phoneQuery = query(
-        usersRef,
-        orderByChild("phone"),
-        equalTo(formattedPhone),
-      );
-      const snapshot = await get(phoneQuery);
+        const otpCode = generateSixDigitOTP();
+        const expiresAt = new Date().getTime() + 5 * 60 * 1000;
+        const phoneSessionId = formattedPhone.replace(/\+/g, "");
 
-      if (snapshot.exists()) {
-        toast.error("Nomor sudah terdaftar", {
-          description:
-            "Nomor ini sudah digunakan. Silakan login atau gunakan nomor lain.",
-          action: {
-            label: "Login",
-            onClick: () => navigate("/login"),
-          },
+        await set(ref(db, `otp_sessions/${phoneSessionId}`), {
+          code: otpCode,
+          expiresAt: expiresAt,
         });
-        setIsLoading(false);
-        return;
+
+        const isSent = await sendOTPViaProvider(formattedPhone, otpCode, name);
+        if (!isSent) {
+          setIsLoading(false);
+          return;
+        }
+
+        setSessionId(phoneSessionId);
+        setShowOtpInput(true);
+        setCountdown(60);
+      } else {
+        const otpCode = generateSixDigitOTP();
+        const newSessionId = new Date().getTime().toString();
+        const expiresAt = new Date().getTime() + 5 * 60 * 1000;
+
+        await set(ref(db, `otp_sessions/${newSessionId}`), {
+          code: otpCode,
+          email: email,
+          createdAt: new Date().getTime(),
+          expiresAt: expiresAt,
+        });
+
+        const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+        const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+        const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+
+        if (!serviceId || !templateId || !publicKey) {
+          toast.error("Kredensial EmailJS belum dikonfigurasi.");
+          setIsLoading(false);
+          return;
+        }
+
+        await emailjs.send(
+          serviceId,
+          templateId,
+          {
+            to_email: email,
+            user_name: name,
+            otp_code: otpCode,
+          },
+          publicKey
+        );
+
+        setSessionId(newSessionId);
+        setShowOtpInput(true);
+        setCountdown(60);
+        toast.success("OTP berhasil dikirim ke Email Anda!");
       }
-
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-      const expiresAt = new Date().getTime() + 5 * 60 * 1000;
-      await set(ref(db, `otp_sessions/${formattedPhone.replace(/\+/g, "")}`), {
-        code: otpCode,
-        expiresAt: expiresAt,
-      });
-
-      const isSent = await sendOTPViaProvider(formattedPhone, otpCode, name);
-      if (!isSent) {
-        setIsLoading(false);
-        return;
-      }
-
-      setShowOtpInput(true);
-      setCountdown(60);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      console.error("Register Flow Error:", error);
       toast.error("Gagal mengirim OTP", {
-        description: translateAuthError(error),
+        description: (error as any).text || (error as Error).message || String(error),
       });
     } finally {
       setIsLoading(false);
@@ -233,20 +249,11 @@ Terima kasih,
 
     setIsLoading(true);
     try {
-      const formattedPhone = phone.startsWith("0")
-        ? `+62${phone.slice(1)}`
-        : phone.startsWith("+")
-          ? phone
-          : `+62${phone}`;
-      const cleanPhone = formattedPhone.replace(/\+/g, "");
-
-      const otpRef = ref(db, `otp_sessions/${cleanPhone}`);
+      const otpRef = ref(db, `otp_sessions/${sessionId}`);
       const snapshot = await get(otpRef);
 
       if (!snapshot.exists()) {
-        toast.error("Kode OTP tidak valid", {
-          description: "Silakan minta kode baru.",
-        });
+        toast.error("Kode OTP salah atau telah kadaluarsa");
         setIsLoading(false);
         return;
       }
@@ -255,105 +262,50 @@ Terima kasih,
       const now = new Date().getTime();
 
       if (sessionData.code !== otp || now > sessionData.expiresAt) {
-        toast.error("Kode OTP salah atau kedaluwarsa.");
+        toast.error("Kode OTP salah atau telah kadaluarsa");
         setIsLoading(false);
         return;
       }
 
       await remove(otpRef);
 
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password,
-      );
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
       await updateProfile(user, { displayName: name });
-
       const finalRole = role === "Penjual" ? "Penjual" : "Pembeli";
 
-      await set(ref(db, `users/${user.uid}`), {
+      const userData: any = {
         uid: user.uid,
         name: name,
         email: email,
         originalPassword: password,
-        phone: formattedPhone,
         role: finalRole,
-        isEmailVerified: true, // Auto-verified because they verified via Phone OTP
+        isEmailVerified: true,
         createdAt: new Date().toISOString(),
-      });
+      };
 
-      toast.success("Registrasi berhasil!", {
-        description: "Akun Anda telah diaktifkan via WhatsApp.",
-      });
-      redirectUser(role);
-    } catch (error: any) {
-      toast.error("Registrasi gagal", {
-        description: translateAuthError(error),
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRegisterFlow = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name || !email || !password || !phone) {
-      toast.error("Mohon lengkapi semua data registrasi");
-      return;
-    }
-
-    if (verificationMethod === "phone") {
-      handleSendOtp(e);
-    } else {
-      setIsLoading(true);
-      try {
+      if (verificationMethod === "phone") {
         const formattedPhone = phone.startsWith("0")
           ? `+62${phone.slice(1)}`
           : phone.startsWith("+")
             ? phone
             : `+62${phone}`;
-
-        const usersRef = ref(db, "users");
-        const phoneQuery = query(usersRef, orderByChild("phone"), equalTo(formattedPhone));
-        const snapshot = await get(phoneQuery);
-
-        if (snapshot.exists()) {
-          toast.error("Nomor sudah terdaftar", {
-            description: "Silakan login atau gunakan nomor lain.",
-            action: { label: "Login", onClick: () => navigate("/login") },
-          });
-          setIsLoading(false);
-          return;
-        }
-
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
-
-        await updateProfile(user, { displayName: name });
-        const finalRole = role === "Penjual" ? "Penjual" : "Pembeli";
-
-        await set(ref(db, `users/${user.uid}`), {
-          uid: user.uid,
-          name: name,
-          email: email,
-          originalPassword: password,
-          phone: formattedPhone,
-          role: finalRole,
-          isEmailVerified: false,
-          createdAt: new Date().toISOString(),
-        });
-
-        await generateAndSendEmailOTP(user.uid, email, name);
-        setUidToVerify(user.uid);
-        setShowEmailOTP(true);
-        toast.success("Pendaftaran berhasil! Tautan verifikasi telah dikirim ke email Anda.");
-      } catch (error: any) {
-        toast.error("Pendaftaran gagal", { description: translateAuthError(error) });
-      } finally {
-        setIsLoading(false);
+        userData.phone = formattedPhone;
       }
+
+      await set(ref(db, `users/${user.uid}`), userData);
+
+      toast.success("Registrasi berhasil!", {
+        description: `Akun Anda telah diaktifkan via ${verificationMethod === "phone" ? "WhatsApp" : "Email"}.`,
+      });
+      redirectUser(role);
+    } catch (error: unknown) {
+      toast.error("Registrasi gagal", {
+        description: translateAuthError(error as Error),
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -361,7 +313,7 @@ Terima kasih,
   const isPasswordValid = password.length >= 6;
   const isPhoneValid = /^[0-9]{9,15}$/.test(phone);
   const isFormValid =
-    name.trim().length > 0 && isEmailValid && isPasswordValid && isPhoneValid;
+    name.trim().length > 0 && isEmailValid && isPasswordValid && (verificationMethod === "email" || isPhoneValid);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -407,21 +359,23 @@ Terima kasih,
                   className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary outline-none text-sm transition-all"
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">
-                  Nomor Handphone (Wajib)
-                </label>
-                <input
-                  type="tel"
-                  placeholder="081234567890"
-                  value={phone}
-                  onChange={(e) =>
-                    setPhone(e.target.value.replace(/[^0-9]/g, ""))
-                  }
-                  disabled={isLoading}
-                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary outline-none text-sm transition-all"
-                />
-              </div>
+              {verificationMethod === "phone" && (
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">
+                    Nomor Handphone (Wajib)
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="081234567890"
+                    value={phone}
+                    onChange={(e) =>
+                      setPhone(e.target.value.replace(/[^0-9]/g, ""))
+                    }
+                    disabled={isLoading}
+                    className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary outline-none text-sm transition-all"
+                  />
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium text-foreground block mb-1.5">
                   Password
@@ -510,7 +464,7 @@ Terima kasih,
                     OTP dikirim ke
                   </p>
                   <p className="font-medium text-sm text-foreground truncate">
-                    {phone}
+                    {verificationMethod === "phone" ? phone : email}
                   </p>
                 </div>
                 <button
@@ -523,7 +477,7 @@ Terima kasih,
                   disabled={isLoading}
                   className="text-xs text-primary hover:underline font-medium shrink-0 ml-2"
                 >
-                  Ubah Nomor
+                  Ubah {verificationMethod === "phone" ? "Nomor" : "Email"}
                 </button>
               </div>
               <div>
@@ -559,7 +513,7 @@ Terima kasih,
                 ) : (
                   <button
                     type="button"
-                    onClick={handleSendOtp}
+                    onClick={handleRegisterFlow}
                     disabled={isLoading}
                     className="text-sm text-primary font-medium hover:underline"
                   >
@@ -652,23 +606,6 @@ Terima kasih,
         </div>
       )}
 
-      {/* Email OTP Verification Modal */}
-      <EmailOTPModal
-        isOpen={showEmailOTP}
-        uid={uidToVerify}
-        email={email}
-        name={name}
-        onClose={() => {
-          setShowEmailOTP(false);
-          auth.signOut();
-          navigate("/login");
-        }}
-        onSuccess={() => {
-          setShowEmailOTP(false);
-          toast.success("Registrasi dan Verifikasi Email Berhasil!");
-          redirectUser(role);
-        }}
-      />
     </div>
   );
 }

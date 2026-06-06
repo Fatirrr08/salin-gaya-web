@@ -15,7 +15,7 @@ export interface RTDBProduct {
   description: string;
   images: string[];
   aiEligibilityScore: string;
-  createdAt: any;
+  createdAt: any | number | string | null;
 }
 
 /**

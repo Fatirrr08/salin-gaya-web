@@ -12,7 +12,8 @@ import {
   type User,
 } from "firebase/auth";
 import { ref, set, get, child } from "firebase/database";
-import { auth, db, googleProvider, facebookProvider } from "@/backend/config/firebase";
+import { collection, query, getDocs, limit, doc, getDoc } from "firebase/firestore";
+import { auth, db, dbFirestore, googleProvider, facebookProvider } from "@/backend/config/firebase";
 
 export type UserRole = "Pembeli" | "Penjual" | "Admin";
 
@@ -99,8 +100,67 @@ export async function getUserData(uid: string) {
 }
 
 /**
+ * Get all users from RTDB for P2P networking.
+ */
+export async function getAllUsers(): Promise<any[]> {
+  const dbRef = ref(db);
+  const snapshot = await get(child(dbRef, `users`));
+  if (snapshot.exists()) {
+    const data = snapshot.val();
+    return Object.values(data);
+  }
+  return [];
+}
+
+/**
+ * Get the Admin user from RTDB for Customer Service routing.
+ */
+export async function getAdminUser(): Promise<any | null> {
+  try {
+    // Primary: Read from Firestore chats/admin_info
+    const docRef = doc(dbFirestore, "chats", "admin_info");
+    const snapDoc = await getDoc(docRef);
+    if (snapDoc.exists()) {
+      return { ...snapDoc.data(), role: "Admin" };
+    }
+
+    // Fallback: search in chats array (if allowed by rules)
+    const chatsRef = collection(dbFirestore, "chats");
+    const q = query(chatsRef, limit(10));
+    const snap = await getDocs(q);
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      if (data.participantDetails) {
+        for (const uid in data.participantDetails) {
+          if (data.participantDetails[uid].role === "Admin" || data.participantDetails[uid].role === "admin") {
+            return {
+              uid: uid,
+              name: data.participantDetails[uid].name || "Admin",
+              role: "Admin"
+            };
+          }
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error fetching admin data:", error);
+    return null;
+  }
+}
+
+/**
  * Sign out the current user.
  */
 export async function logout(): Promise<void> {
   await signOut(auth);
 }
+
+/**
+ * Generate 6-digit random OTP
+ */
+export function generateSixDigitOTP(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+

@@ -1,0 +1,33 @@
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "products": {
+      ".read": true,
+      "$productId": {
+        // Hanya bisa membuat/mengubah produk jika sellerUid cocok dengan auth.uid
+        ".write": "auth != null && (!data.exists() || data.child('sellerUid').val() == auth.uid) && newData.child('sellerUid').val() == auth.uid"
+      }
+    },
+    "status": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "typing": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "public_data": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+    "otp_sessions": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

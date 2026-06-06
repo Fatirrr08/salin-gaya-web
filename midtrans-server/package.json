@@ -1,0 +1,18 @@
+{
+  "name": "midtrans-server",
+  "version": "1.0.0",
+  "description": "Midtrans API for Salin Gaya",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "midtrans-client": "^1.4.3"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

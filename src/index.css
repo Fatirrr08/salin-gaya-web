@@ -93,8 +93,15 @@
     @apply border-border;
   }
 
+  html {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
+    overflow-x: hidden;
+    max-width: 100vw;
     /*
      * Mencegah layout shift (lebar halaman berubah) saat scrollbar
      * muncul/hilang selama transisi antar halaman.
@@ -107,5 +114,16 @@
   .text-gradient-gold {
     @apply bg-clip-text text-transparent;
     background-image: linear-gradient(135deg, hsl(40 70% 55%), hsl(33 55% 40%));
+  }
+
+  /* ── Pure CSS Page Transitions ── */
+  @keyframes pageFadeIn {
+    0% { opacity: 0; transform: translateY(15px); filter: blur(2px); }
+    100% { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+  
+  .animate-page-enter {
+    animation: pageFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: opacity, transform, filter;
   }
 }

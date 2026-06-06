@@ -11,6 +11,7 @@ import {
   uploadBytes,
   getDownloadURL,
 } from "firebase/storage";
+import { syncUserProfileToChats } from "@/backend/services/chatService";
 import { toast } from "sonner";
 import {
   User,
@@ -23,7 +24,11 @@ import {
   Map,
 } from "lucide-react";
 import UpdateEmailForm from "@/frontend/components/profile/UpdateEmailForm";
+import UpdatePhoneForm from "@/frontend/components/profile/UpdatePhoneForm";
 import UpdatePasswordForm from "@/frontend/components/profile/UpdatePasswordForm";
+import TwoFactorSettings from "@/frontend/components/profile/TwoFactorSettings";
+import ActiveSessions from "@/frontend/components/profile/ActiveSessions";
+import SecurityLogs from "@/frontend/components/profile/SecurityLogs";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare } from "lucide-react";
 
@@ -37,7 +42,7 @@ export default function ProfilePage() {
 
   const [name, setName] = useState("");
   const [dbEmail, setDbEmail] = useState("");
-  const [dbPhone, setDbPhone] = useState("");
+  const [phone, setPhone] = useState("");
   const [photoURL, setPhotoURL] = useState("");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -65,7 +70,7 @@ export default function ProfilePage() {
           const data = snapshot.val();
           if (data.name && !currentUser.displayName) setName(data.name);
           if (data.email) setDbEmail(data.email);
-          if (data.phone) setDbPhone(data.phone);
+          if (data.phone) setPhone(data.phone);
           if (data.photoURL) setPhotoURL(data.photoURL);
           if (data.address) {
             setStreet(data.address.street || "");
@@ -75,7 +80,8 @@ export default function ProfilePage() {
         } else {
           setDbEmail(currentUser.email || "");
         }
-      } catch (e) {
+      } catch (error) {
+        console.error(error);
         setDbEmail(currentUser.email || "");
       }
     };
@@ -147,11 +153,14 @@ export default function ProfilePage() {
         },
       });
 
+      // Sync the new profile photo and name to all active P2P chats
+      await syncUserProfileToChats(currentUser.uid, name, currentPhotoURL || currentUser.photoURL);
+
       setSelectedFile(null);
       setPreviewImage(null);
       toast.success("Profil berhasil disimpan!");
-    } catch (error: any) {
-      toast.error("Gagal menyimpan", { description: error.message });
+    } catch (error: unknown) {
+      toast.error("Gagal menyimpan", { description: (error as Error).message });
     } finally {
       setIsUpdating(false);
     }
@@ -173,14 +182,14 @@ export default function ProfilePage() {
 
       toast.success("Akun telah dihapus.");
       navigate("/");
-    } catch (error: any) {
-      if (error.code === "auth/requires-recent-login") {
+    } catch (error: unknown) {
+      if ((error as any).code === "auth/requires-recent-login") {
         toast.error("Gagal menghapus", {
           description:
             "Tindakan ini sensitif. Silakan keluar dan masuk kembali sebelum mencoba menghapus akun.",
         });
       } else {
-        toast.error("Gagal menghapus akun", { description: error.message });
+        toast.error("Gagal menghapus akun", { description: (error as Error).message });
       }
       setIsDeleting(false);
     }
@@ -189,16 +198,16 @@ export default function ProfilePage() {
   if (!currentUser) return null;
 
   // Masked Phone helper
-  const formatMaskedPhone = (phone: string) => {
-    if (!phone || phone.length < 5) return phone;
-    const firstTwo = phone.substring(0, 4);
-    const lastTwo = phone.substring(phone.length - 2);
-    const masked = "*".repeat(phone.length - 6);
+  const formatMaskedPhone = (phoneStr: string) => {
+    if (!phoneStr || phoneStr.length < 5) return phoneStr;
+    const firstTwo = phoneStr.substring(0, 4);
+    const lastTwo = phoneStr.substring(phoneStr.length - 2);
+    const masked = "*".repeat(phoneStr.length - 6);
     return `${firstTwo}${masked}${lastTwo}`;
   };
 
   const displayEmail = dbEmail || currentUser.email || "";
-  const displayPhone = formatMaskedPhone(dbPhone) || "Belum ditambahkan";
+  const displayPhone = formatMaskedPhone(phone) || "Belum ditambahkan";
 
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col">
@@ -258,10 +267,10 @@ export default function ProfilePage() {
                 </button>
               </nav>
 
-              {role !== "Admin" && (
+              {role !== "Admin" && role !== "admin" && (
                 <div className="mt-6 pt-6 border-t border-border">
                   <button
-                    onClick={() => navigate("/chat/admin")}
+                    onClick={() => navigate("/inbox")}
                     className="w-full flex items-center justify-center gap-2 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground px-4 py-3 rounded-xl text-sm font-bold transition-all"
                   >
                     <MessageSquare className="w-5 h-5" />
@@ -366,8 +375,14 @@ export default function ProfilePage() {
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Nomor HP
+                      <label className="text-sm font-medium text-foreground flex items-center justify-between">
+                        <span>Nomor HP</span>
+                        <button
+                          onClick={() => setActiveTab("keamanan")}
+                          className="text-primary hover:underline text-xs"
+                        >
+                          Ubah Nomor HP
+                        </button>
                       </label>
                       <input
                         type="text"
@@ -492,7 +507,11 @@ export default function ProfilePage() {
                     </div>
 
                     <UpdateEmailForm currentEmail={displayEmail} />
+                    <UpdatePhoneForm currentPhone={phone} userName={name} />
                     <UpdatePasswordForm />
+                    <TwoFactorSettings />
+                    <ActiveSessions />
+                    <SecurityLogs />
                   </div>
 
                   {/* Danger Zone */}

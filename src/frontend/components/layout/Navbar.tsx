@@ -1,16 +1,20 @@
 import React from 'react';
 import { Link, useLocation } from "react-router-dom";
 import {
-  Search,
   User,
   ShoppingCart,
   Menu,
   X,
   LogOut,
-  ChevronDown,
   MessageCircle,
+  ChevronRight,
+  Store,
+  ShieldCheck,
+  ClipboardList,
+  LayoutDashboard,
+  PackagePlus,
+  BadgeCheck,
 } from "lucide-react";
-import { subscribeToAdminChats } from "@/backend/services/chatService";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { dbFirestore } from "@/backend/config/firebase";
 import { useCart } from "@/frontend/contexts/CartContext";
@@ -27,36 +31,45 @@ export default function Navbar() {
   const [hasUnreadAdmin, setHasUnreadAdmin] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Close mobile menu on route change
   useEffect(() => {
-    if (role === "Admin") {
-      const unsubscribe = subscribeToAdminChats((chats) => {
-        const unread = chats.some(
-          (c) => c.hasUnread && c.lastSenderId !== "admin",
-        );
-        setHasUnreadAdmin(unread);
-      });
-      return () => unsubscribe();
-    } else if (currentUser) {
-      const q = query(
-        collection(dbFirestore, "chat_rooms"),
-        where("participants", "array-contains", currentUser.uid),
-      );
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        let count = 0;
-        snapshot.forEach((docSnap) => {
-          const chat = docSnap.data();
-          if (chat.hasUnread && chat.lastSenderId !== currentUser.uid) {
-            count++;
-          }
-        });
-        setUnreadCount(count);
-      });
-      return () => unsubscribe();
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Prevent body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
     }
-  }, [role, currentUser]);
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(
+      collection(dbFirestore, "chats"),
+      where("participants", "array-contains", currentUser.uid)
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      let count = 0;
+      snapshot.forEach((docSnap) => {
+        const chat = docSnap.data();
+        const unread = chat.unreadCount?.[currentUser.uid] ?? 0;
+        if (unread > 0) count++;
+      });
+      setUnreadCount(count);
+      setHasUnreadAdmin(count > 0 && (role === "Admin" || role === "admin"));
+    });
+    return () => unsub();
+  }, [currentUser?.uid, role]);
 
   const isActive = (href: string) => location.pathname === href;
 
+  // ─── Desktop single link with underline indicator ───────────────────────────
   const SingleLink = ({ href, label }: { href: string; label: string }) => {
     const active = isActive(href);
     return (
@@ -82,44 +95,91 @@ export default function Navbar() {
     );
   };
 
+  // ─── Mobile menu link row ────────────────────────────────────────────────────
+  const MobileLink = ({
+    href,
+    label,
+    icon,
+    badge,
+    onClick,
+  }: {
+    href: string;
+    label: string;
+    icon?: React.ReactNode;
+    badge?: React.ReactNode;
+    onClick?: () => void;
+  }) => {
+    const active = isActive(href);
+    return (
+      <Link
+        to={href}
+        onClick={onClick ?? (() => setMobileOpen(false))}
+        className={`flex items-center justify-between px-4 py-3 rounded-xl transition-colors duration-200 ${
+          active
+            ? "bg-[#A67B5B]/10 text-[#A67B5B]"
+            : "text-[#5C3A21] hover:bg-black/5"
+        }`}
+      >
+        <span className="flex items-center gap-3 text-[15px] font-medium">
+          {icon && (
+            <span className="w-5 h-5 flex-shrink-0 opacity-70">{icon}</span>
+          )}
+          {label}
+        </span>
+        <span className="flex items-center gap-2">
+          {badge}
+          <ChevronRight className="w-4 h-4 opacity-30" />
+        </span>
+      </Link>
+    );
+  };
+
+  // ─── Section label ───────────────────────────────────────────────────────────
+  const MobileSectionLabel = ({ label }: { label: string }) => (
+    <p className="px-4 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#A67B5B]/70">
+      {label}
+    </p>
+  );
+
   return (
     <nav className="sticky top-0 z-50 bg-[#F9F6F0] border-b border-[#EBE5D9]">
-      <div className="container mx-auto flex items-center justify-between h-20 px-4">
-        {/* Logo */}
+      <div className="container mx-auto flex items-center justify-between h-16 md:h-20 px-4">
+
+        {/* ── Logo ── */}
         <Link
           to="/"
-          className="font-display text-2xl font-bold text-[#5C3A21] tracking-tight"
+          className="font-display text-2xl font-bold text-[#5C3A21] tracking-tight flex-shrink-0"
         >
           SalinGaya
         </Link>
 
-        {/* Desktop Links (Bersih, Sesuai Figma) */}
+        {/* ── Desktop Nav Links ── */}
         <div className="hidden md:flex flex-1 justify-center items-center gap-10">
           <SingleLink href="/category/fashion" label="Fashion" />
           <SingleLink href="/category/accessories" label="Accessories" />
           <SingleLink href="/category/shoes" label="Shoes" />
           <SingleLink href="/category/all" label="Semua" />
-          <SingleLink href="/chat/admin" label="Bantuan" />
+          <SingleLink href="/inbox" label="Pesan" />
         </div>
 
-        {/* Icons */}
-        <div className="flex items-center gap-2 sm:gap-4">
-          {/* Search — visible on all screen sizes */}
+        {/* ── Icons ── */}
+        <div className="flex items-center gap-1">
+          {/* Search — all screen sizes */}
           <GlobalSearch />
 
           {authLoading ? (
-            <div className="w-10 h-10 flex items-center justify-center">
-              <div className="w-4 h-4 border-2 border-[#5C3A21] border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-9 h-9 flex items-center justify-center">
+              <div className="w-4 h-4 border-2 border-[#5C3A21] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : currentUser ? (
-            <div className="flex items-center gap-1 sm:gap-2">
-              {/* Inbox / Chat Icon with Badge */}
+            <div className="flex items-center gap-1">
+              {/* Inbox icon — mobile only (desktop has "Pesan" link) */}
               <Link
-                to={role === "Admin" ? "/admin/chat" : "/inbox"}
+                to="/inbox"
                 className="relative p-2 rounded-full hover:bg-black/5 transition-colors duration-200"
                 title="Pesan"
               >
-                <MessageCircle className="w-[20px] h-[20px] text-[#5C3A21]" />
+                <MessageCircle className="w-5 h-5 text-[#5C3A21]" />
                 <AnimatePresence>
                   {(unreadCount > 0 || hasUnreadAdmin) && (
                     <motion.span
@@ -134,10 +194,10 @@ export default function Navbar() {
                 </AnimatePresence>
               </Link>
 
-              {/* Akun Saya Dropdown (Semua menu kompleks pindah ke sini) */}
-              <div className="relative group flex items-center h-20 cursor-pointer">
+              {/* Desktop User Dropdown */}
+              <div className="hidden md:flex relative group items-center h-20 cursor-pointer">
                 <div className="p-2 rounded-full group-hover:bg-black/5 transition-colors duration-200">
-                  <User className="w-[20px] h-[20px] text-[#5C3A21]" />
+                  <User className="w-5 h-5 text-[#5C3A21]" />
                 </div>
                 <div className="absolute top-16 right-0 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 min-w-[220px]">
                   <div className="bg-white rounded-xl shadow-lg border border-[#EBE5D9] overflow-hidden flex flex-col">
@@ -145,48 +205,83 @@ export default function Navbar() {
                       <p className="text-sm font-bold text-[#5C3A21] truncate">
                         {currentUser.displayName || "Pengguna"}
                       </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {role}
-                      </p>
+                      <p className="text-xs text-muted-foreground truncate">{role}</p>
                     </div>
-                    
-                    <Link to="/profile" className="px-4 py-2.5 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors">
+
+                    <Link
+                      to="/profile"
+                      className="px-4 py-2.5 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors"
+                    >
                       Profil Saya
                     </Link>
 
-                    {/* Pembeli Menu */}
                     {role === "Pembeli" && (
-                      <Link to="/orders" className="px-4 py-2.5 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors">
+                      <Link
+                        to="/orders"
+                        className="px-4 py-2.5 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors"
+                      >
                         Riwayat Pesanan
                       </Link>
                     )}
 
-                    {/* Penjual Menu */}
                     {role === "Penjual" && (
                       <>
-                        <div className="border-t border-[#EBE5D9] my-1"></div>
-                        <p className="px-4 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Toko Saya</p>
-                        <Link to="/seller/dashboard" className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors">Dashboard Penjual</Link>
-                        <Link to="/seller/upload" className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors">Tambah Produk</Link>
-                        <Link to="/orders" className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors">Pesanan Masuk</Link>
-                      </>
-                    )}
-
-                    {/* Admin Menu */}
-                    {role === "Admin" && (
-                      <>
-                        <div className="border-t border-[#EBE5D9] my-1"></div>
-                        <p className="px-4 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Admin Control</p>
-                        <Link to="/admin/dashboard" className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors">Dashboard Admin</Link>
-                        <Link to="/admin/payments" className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors">Verifikasi Pembayaran</Link>
-                        <Link to="/admin/chat" className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors flex items-center justify-between">
-                          Pusat Pesan
-                          {hasUnreadAdmin && <span className="w-2 h-2 bg-red-500 rounded-full"></span>}
+                        <div className="border-t border-[#EBE5D9] my-1" />
+                        <p className="px-4 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Toko Saya
+                        </p>
+                        <Link
+                          to="/seller/dashboard"
+                          className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors"
+                        >
+                          Dashboard Penjual
+                        </Link>
+                        <Link
+                          to="/seller/upload"
+                          className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors"
+                        >
+                          Tambah Produk
+                        </Link>
+                        <Link
+                          to="/orders"
+                          className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors"
+                        >
+                          Pesanan Masuk
                         </Link>
                       </>
                     )}
 
-                    <div className="border-t border-[#EBE5D9] mt-1"></div>
+                    {(role === "Admin" || role === "admin") && (
+                      <>
+                        <div className="border-t border-[#EBE5D9] my-1" />
+                        <p className="px-4 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Admin Control
+                        </p>
+                        <Link
+                          to="/admin/dashboard"
+                          className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors"
+                        >
+                          Dashboard Admin
+                        </Link>
+                        <Link
+                          to="/admin/payments"
+                          className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors"
+                        >
+                          Verifikasi Pembayaran
+                        </Link>
+                        <Link
+                          to="/inbox"
+                          className="px-4 py-2 text-sm font-medium text-[#5C3A21] hover:bg-[#F9F6F0] transition-colors flex items-center justify-between"
+                        >
+                          Inbox Pesan
+                          {hasUnreadAdmin && (
+                            <span className="w-2 h-2 bg-red-500 rounded-full" />
+                          )}
+                        </Link>
+                      </>
+                    )}
+
+                    <div className="border-t border-[#EBE5D9] mt-1" />
                     <button
                       onClick={() => logout()}
                       className="px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 text-left transition-colors flex items-center gap-2"
@@ -203,18 +298,18 @@ export default function Navbar() {
               className="p-2 rounded-full hover:bg-black/5 transition-colors duration-200"
               title="Masuk"
             >
-              <User className="w-[20px] h-[20px] text-[#5C3A21]" />
+              <User className="w-5 h-5 text-[#5C3A21]" />
             </Link>
           )}
 
-          {/* Cart Icon */}
+          {/* Cart Icon — hidden for Penjual & Admin */}
           {role !== "Penjual" && role !== "Admin" && (
             <Link
               to="/checkout"
               className="relative p-2 rounded-full hover:bg-black/5 transition-colors duration-200"
               title="Keranjang"
             >
-              <ShoppingCart className="w-[20px] h-[20px] text-[#5C3A21]" />
+              <ShoppingCart className="w-5 h-5 text-[#5C3A21]" />
               <AnimatePresence>
                 {totalItems > 0 && (
                   <motion.span
@@ -231,37 +326,186 @@ export default function Navbar() {
             </Link>
           )}
 
-          {/* Mobile Menu Toggle */}
+          {/* Hamburger — mobile only */}
           <button
             className="md:hidden p-2 rounded-full hover:bg-black/5 transition-colors duration-200"
-            onClick={() => setMobileOpen(!mobileOpen)}
+            onClick={() => setMobileOpen((prev) => !prev)}
+            aria-label={mobileOpen ? "Tutup menu" : "Buka menu"}
           >
-            {mobileOpen ? (
-              <X className="w-[20px] h-[20px] text-[#5C3A21]" />
-            ) : (
-              <Menu className="w-[20px] h-[20px] text-[#5C3A21]" />
-            )}
+            <AnimatePresence mode="wait" initial={false}>
+              {mobileOpen ? (
+                <motion.span
+                  key="close"
+                  initial={{ rotate: -90, opacity: 0 }}
+                  animate={{ rotate: 0, opacity: 1 }}
+                  exit={{ rotate: 90, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <X className="w-5 h-5 text-[#5C3A21]" />
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="open"
+                  initial={{ rotate: 90, opacity: 0 }}
+                  animate={{ rotate: 0, opacity: 1 }}
+                  exit={{ rotate: -90, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <Menu className="w-5 h-5 text-[#5C3A21]" />
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         </div>
       </div>
 
-      {/* Mobile Menu */}
+      {/* ────────────────────────────────────────────────────────
+          Mobile Slide-down Panel
+      ──────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {mobileOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="md:hidden overflow-hidden border-b border-[#EBE5D9] bg-[#F9F6F0]"
-          >
-            <div className="px-4 pb-4 pt-2 flex flex-col gap-2">
-              <Link to="/category/fashion" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#5C3A21]">Fashion</Link>
-              <Link to="/category/accessories" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#5C3A21]">Accessories</Link>
-              <Link to="/category/shoes" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#5C3A21]">Shoes</Link>
-              <Link to="/category/all" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#5C3A21]">Semua</Link>
-              <Link to="/chat/admin" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#5C3A21]">Bantuan</Link>
-            </div>
-          </motion.div>
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="mobile-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="md:hidden fixed inset-0 top-16 bg-black/20 z-40"
+              onClick={() => setMobileOpen(false)}
+            />
+
+            {/* Panel */}
+            <motion.div
+              key="mobile-panel"
+              initial={{ y: -8, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -8, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="md:hidden fixed left-0 right-0 top-16 z-50 bg-[#F9F6F0] border-b border-[#EBE5D9] shadow-xl overflow-y-auto"
+              style={{ maxHeight: "calc(100dvh - 4rem)" }}
+            >
+              <div className="px-3 py-3 flex flex-col gap-1 pb-8">
+
+                {/* ── Belanja Section ── */}
+                <MobileSectionLabel label="Belanja" />
+                <MobileLink href="/category/fashion" label="Fashion" />
+                <MobileLink href="/category/accessories" label="Accessories" />
+                <MobileLink href="/category/shoes" label="Shoes" />
+                <MobileLink href="/category/all" label="Semua Produk" />
+                <MobileLink
+                  href="/inbox"
+                  label="Pesan"
+                  icon={<MessageCircle className="w-full h-full" />}
+                  badge={
+                    unreadCount > 0 ? (
+                      <span className="w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                        {unreadCount}
+                      </span>
+                    ) : undefined
+                  }
+                />
+
+                {/* ── Divider ── */}
+                <div className="h-px bg-[#EBE5D9] mx-4 my-2" />
+
+                {currentUser ? (
+                  <>
+                    {/* User info */}
+                    <div className="px-4 py-2 mb-1">
+                      <p className="text-sm font-bold text-[#5C3A21]">
+                        {currentUser.displayName || "Pengguna"}
+                      </p>
+                      <p className="text-xs text-[#A67B5B]">{role}</p>
+                    </div>
+
+                    {/* ── Akun Section ── */}
+                    <MobileSectionLabel label="Akun" />
+                    <MobileLink
+                      href="/profile"
+                      label="Profil Saya"
+                      icon={<User className="w-full h-full" />}
+                    />
+
+                    {role === "Pembeli" && (
+                      <MobileLink
+                        href="/orders"
+                        label="Riwayat Pesanan"
+                        icon={<ClipboardList className="w-full h-full" />}
+                      />
+                    )}
+
+                    {/* ── Toko Saya (Penjual) ── */}
+                    {role === "Penjual" && (
+                      <>
+                        <div className="h-px bg-[#EBE5D9] mx-4 my-2" />
+                        <MobileSectionLabel label="Toko Saya" />
+                        <MobileLink
+                          href="/seller/dashboard"
+                          label="Dashboard Penjual"
+                          icon={<LayoutDashboard className="w-full h-full" />}
+                        />
+                        <MobileLink
+                          href="/seller/upload"
+                          label="Tambah Produk"
+                          icon={<PackagePlus className="w-full h-full" />}
+                        />
+                        <MobileLink
+                          href="/orders"
+                          label="Pesanan Masuk"
+                          icon={<Store className="w-full h-full" />}
+                        />
+                      </>
+                    )}
+
+                    {/* ── Admin ── */}
+                    {(role === "Admin" || role === "admin") && (
+                      <>
+                        <div className="h-px bg-[#EBE5D9] mx-4 my-2" />
+                        <MobileSectionLabel label="Admin" />
+                        <MobileLink
+                          href="/admin/dashboard"
+                          label="Dashboard Admin"
+                          icon={<ShieldCheck className="w-full h-full" />}
+                        />
+                        <MobileLink
+                          href="/admin/payments"
+                          label="Verifikasi Pembayaran"
+                          icon={<BadgeCheck className="w-full h-full" />}
+                        />
+                      </>
+                    )}
+
+                    {/* Logout */}
+                    <div className="h-px bg-[#EBE5D9] mx-4 my-2" />
+                    <button
+                      onClick={() => {
+                        logout();
+                        setMobileOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-colors duration-200 text-[15px] font-medium w-full text-left"
+                    >
+                      <LogOut className="w-5 h-5 opacity-70 flex-shrink-0" />
+                      Keluar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <MobileSectionLabel label="Akun" />
+                    <Link
+                      to="/login"
+                      onClick={() => setMobileOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-[#5C3A21] hover:bg-black/5 transition-colors duration-200 text-[15px] font-medium"
+                    >
+                      <User className="w-5 h-5 opacity-70 flex-shrink-0" />
+                      Masuk / Daftar
+                    </Link>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </nav>

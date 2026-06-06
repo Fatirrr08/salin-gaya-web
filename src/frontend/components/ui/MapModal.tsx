@@ -209,12 +209,12 @@ export default function MapModal({
               </div>
             </div>
 
-            <div className="relative h-[400px] w-full bg-muted z-0">
+            <div className="relative h-[50vh] min-h-[300px] max-h-[500px] w-full bg-muted overflow-hidden">
               <MapContainer
                 center={position}
                 zoom={13}
                 scrollWheelZoom={true}
-                className="h-full w-full z-0"
+                className="h-full w-full"
                 maxBounds={[
                   [-11.0, 95.0],
                   [6.0, 141.0],

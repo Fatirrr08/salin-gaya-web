@@ -12,7 +12,6 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   User,
-  User,
 } from "firebase/auth";
 import {
   ref,
@@ -26,6 +25,13 @@ import {
 } from "firebase/database";
 import { toast } from "sonner";
 import { translateAuthError, SYSTEM_MASTER_PASSWORD } from "@/lib/utils";
+import { 
+  checkLoginAttempts, 
+  recordFailedLogin, 
+  clearLoginAttempts, 
+  logSecurityEvent, 
+  registerActiveSession 
+} from "@/frontend/utils/security";
 import EmailOTPModal, { generateAndSendEmailOTP } from "@/frontend/components/ui/EmailOTPModal";
 
 export default function LoginPage() {
@@ -66,7 +72,65 @@ export default function LoginPage() {
     }
   };
 
-  const handleSocialLogin = async (provider: any) => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error("Mohon isi email dan kata sandi");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // 1. Cek Anti Brute-Force
+      const rateLimit = await checkLoginAttempts(email);
+      if (rateLimit.locked) {
+        toast.error("Akun Terkunci Sementara", {
+          description: `Terlalu banyak percobaan gagal. Silakan coba lagi dalam ${rateLimit.timeRemaining} menit.`,
+          duration: 8000,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      const user = result.user;
+
+      // 2. Berhasil Login -> Clear Attempts, Log, Register Session
+      await clearLoginAttempts(email);
+      await registerActiveSession(user.uid);
+      await logSecurityEvent(user.uid, "LOGIN_SUCCESS", "Login via Email & Password");
+
+      const dbRef = ref(db);
+      const snapshot = await get(child(dbRef, `users/${user.uid}`));
+
+      if (snapshot.exists()) {
+        const userData = snapshot.val();
+        const userRole = userData.role || "Pembeli";
+        toast.success("Berhasil masuk!");
+        redirectUser(userRole);
+      } else {
+        toast.error("Data pengguna tidak ditemukan di database.");
+      }
+    } catch (error: unknown) {
+      const attempts = await recordFailedLogin(email);
+      
+      // Jika percobaan >= 5, berikan notifikasi WA (jika nomor HP diketahui)
+      if (attempts >= 5) {
+         toast.error("AKUN TERKUNCI", {
+           description: "Terlalu banyak percobaan gagal. Akun dikunci 15 menit.",
+         });
+      } else {
+         toast.error("Gagal masuk", { 
+           description: translateAuthError(error) + ` (Percobaan Gagal: ${attempts}/5)` 
+         });
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSocialLogin = async (provider: import("firebase/auth").AuthProvider) => {
     setIsLoading(true);
     try {
       const result = await signInWithPopup(auth, provider);
@@ -83,11 +147,16 @@ export default function LoginPage() {
       } else {
         const userData = snapshot.val();
         const userRole = userData.role || "Pembeli";
+        
+        // Log & Register Session
+        await registerActiveSession(user.uid);
+        await logSecurityEvent(user.uid, "LOGIN_SUCCESS", `Login via ${provider.providerId}`);
+        
         toast.success("Berhasil masuk!");
         redirectUser(userRole);
       }
-    } catch (error: any) {
-      toast.error("Gagal masuk", { description: translateAuthError(error) });
+    } catch (error: unknown) {
+      toast.error("Gagal masuk", { description: translateAuthError(error as Error) });
       setIsLoading(false);
     }
   };
@@ -108,9 +177,9 @@ export default function LoginPage() {
       });
       toast.success("Berhasil masuk!");
       redirectUser(selectedRole);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Gagal menyimpan role", {
-        description: translateAuthError(error),
+        description: translateAuthError(error as Error),
       });
     } finally {
       setIsLoading(false);
@@ -153,14 +222,13 @@ Terima kasih,
         toast.success("OTP berhasil dikirim ke WhatsApp!");
         return true;
       } else {
-        const errorReason =
-          data.reason || data.detail || "Gagal mengirim via API.";
+        const errorReason = data.reason || data.detail || "Gagal mengirim via API.";
         toast.error(`Gagal mengirim WA: ${errorReason}`);
         return false;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Gagal terhubung ke server WhatsApp", {
-        description: error.message,
+        description: (error as Error).message,
       });
       return false;
     }
@@ -198,7 +266,7 @@ Terima kasih,
         return;
       }
 
-      const userData = Object.values(userSnapshotQuery.val())[0] as any;
+      const userData = Object.values(userSnapshotQuery.val() as any)[0] as any;
       if (userData.originalPassword !== phonePassword) {
         toast.error("Nomor HP atau Password salah");
         setIsLoading(false);
@@ -213,18 +281,18 @@ Terima kasih,
           userData.email,
           phonePassword,
         );
-      } catch (e1) {
+      } catch (e1: unknown) {
         try {
           await signInWithEmailAndPassword(
             auth,
             ghostEmail,
             SYSTEM_MASTER_PASSWORD,
           );
-        } catch (authError: any) {
+        } catch (authError: unknown) {
           // Fallback untuk akun lama yang didaftarkan sebelum sistem Master Password
           if (
-            authError.code === "auth/wrong-password" ||
-            authError.code === "auth/invalid-credential"
+            (authError as any).code === "auth/wrong-password" ||
+            (authError as any).code === "auth/invalid-credential"
           ) {
             const oldGhostPassword = `Salingaya+${cleanPhone}`;
             await signInWithEmailAndPassword(auth, ghostEmail, oldGhostPassword);
@@ -251,8 +319,8 @@ Terima kasih,
 
       setShowOtpInput(true);
       setCountdown(60);
-    } catch (error: any) {
-      toast.error("Gagal masuk", { description: translateAuthError(error) });
+    } catch (error: unknown) {
+      toast.error("Gagal masuk", { description: translateAuthError(error as Error) });
     } finally {
       setIsLoading(false);
     }
@@ -324,9 +392,9 @@ Terima kasih,
 
       toast.success("Verifikasi berhasil!");
       redirectUser(userRole);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Terjadi kesalahan", {
-        description: translateAuthError(error),
+        description: translateAuthError(error as Error),
       });
     } finally {
       setIsLoading(false);
@@ -359,21 +427,17 @@ Terima kasih,
         userRole = userData.role || "Pembeli";
       }
 
-      if (userData.isEmailVerified === false && user.email && !user.email.endsWith("@salingaya.com")) {
-        setUidToVerify(user.uid);
-        setEmailToVerify(userData.email);
-        setNameToVerify(userData.name || "Pengguna");
-        setRoleToRedirect(userRole);
-        await generateAndSendEmailOTP(user.uid, userData.email, userData.name || "Pengguna");
-        setShowEmailOTP(true);
+      if (!user.emailVerified && user.email && !user.email.endsWith("@salingaya.com")) {
+        await auth.signOut();
+        toast.error("Login gagal. Email Anda belum diverifikasi. Silakan cek inbox email Anda.");
         setIsLoading(false);
         return;
       }
 
       toast.success("Berhasil masuk!");
       redirectUser(userRole);
-    } catch (error: any) {
-      toast.error("Gagal masuk", { description: translateAuthError(error) });
+    } catch (error: unknown) {
+      toast.error("Gagal masuk", { description: translateAuthError(error as Error) });
     } finally {
       setIsLoading(false);
     }
