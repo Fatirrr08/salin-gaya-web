@@ -189,7 +189,7 @@ async function callGeminiVision(
       "Kunci API Gemini (VITE_GEMINI_API_KEY) tidak ditemukan atau kosong!",
     );
   }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const prompt = `Kamu adalah sistem AI Quality Control & Asisten Copywriter untuk platform thrifting premium "Salin Gaya".
 Analisis foto-foto pakaian/barang fashion berikut dan berikan penilaian dalam format JSON murni.
@@ -250,9 +250,9 @@ Kriteria grade normal (jika lolos aturan wajib): A=semua skor ≥80, B=rata-rata
 // ─── Utilitas Kompresi Gambar (Canvas) ────────────────────────────────────────
 async function compressImageToBase64(
   file: File,
-  maxWidth = 1024,
-  maxHeight = 1024,
-  quality = 0.7,
+  maxWidth = 600,
+  maxHeight = 600,
+  quality = 0.5,
 ): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -291,7 +291,9 @@ async function compressImageToBase64(
 
         // Kompres ke JPEG untuk mengurangi payload data secara signifikan
         const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        const base64 = dataUrl.split(",")[1];
+        // const base64 = dataUrl.split(",")[1];
+        // resolve({ base64, mimeType: "image/jpeg" });
+        const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
         resolve({ base64, mimeType: "image/jpeg" });
       };
       img.onerror = () =>
@@ -365,19 +367,19 @@ export default function SellerUploadProduct() {
     setCertificateUrl(null);
 
     try {
-      // Periksa ukuran semua gambar
-      for (const img of images) {
-        if (img.size > 10 * 1024 * 1024) {
-          toast.error(`Ukuran file ${img.name} maksimal 10 MB!`);
-          setIsAnalyzing(false);
-          return;
-        }
-      }
+      // // Periksa ukuran semua gambar
+      // for (const img of images) {
+      //   if (img.size > 10 * 1024 * 1024) {
+      //     toast.error(`Ukuran file ${img.name} maksimal 10 MB!`);
+      //     setIsAnalyzing(false);
+      //     return;
+      //   }
+      // }
 
       // Kompres semua gambar secara otomatis sebelum dikirim ke AI
       const compressedImages = await Promise.all(
         images.map(async (img) => {
-          const { base64, mimeType } = await compressImageToBase64(img, 1024, 1024, 0.7);
+          const { base64, mimeType } = await compressImageToBase64(img, 600, 600, 0.5);
           const cleanBase64 = base64.includes(",") ? base64.split(",")[1] : base64;
           return { base64: cleanBase64, mimeType };
         })
