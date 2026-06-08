@@ -364,27 +364,39 @@ export default function Checkout() {
       return;
     }
 
+    // Jalur Manual / Gambar Statis Jika Memilih QRIS Non-Automated bawaan tokomu
     if (paymentMethod === "QRIS") {
       setShowQrisModal(true);
       return;
     }
 
-    // MIDTRANS SNAP PATH
+    // ─── JALUR INTEGRASI AUTOMATED MIDTRANS SNAP ───
     setIsProcessingPayment(true);
-    
+
     try {
-      const orderId = `ORDER-${Math.floor(Math.random() * 1000000)}-${Date.now()}`;
-      
-      const response = await fetch("http://localhost:5000/api/get-snap-token", {
+      // Membuat ID Pesanan Unik berprefix SG (Salin Gaya)
+      const orderId = `SG-${Math.floor(100000 + Math.random() * 900000)}-${Date.now()}`;
+
+      // Menembak endpoint backend Node.js (/api/charge) yang telah disesuaikan
+      const response = await fetch("http://localhost:5000/api/charge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          order_id: orderId,
-          gross_amount: grandTotal,
-          customer_details: {
-            first_name: currentUser.displayName || "Customer",
+          orderId: orderId,
+          grossAmount: Math.round(grandTotal), // Midtrans mewajibkan angka bulat integer
+          customerDetails: {
+            first_name: currentUser.displayName || "Pembeli",
             email: currentUser.email || "",
-          }
+          },
+          itemDetails: items.map((item: any) => ({
+            id: item.id,
+            price: Math.round(item.price),
+            quantity: Number(item.quantity) || 1,
+            name:
+              item.name.length > 50
+                ? item.name.slice(0, 47) + "..."
+                : item.name,
+          })),
         }),
       }).catch(() => null);
 
@@ -392,38 +404,48 @@ export default function Checkout() {
         const data = await response.json();
 
         if (data.token) {
-          const globalWindow = window as unknown as any;
+          const globalWindow = window as any;
           if (globalWindow.snap) {
-            (globalWindow.snap as { pay: (token: string, options: any) => void }).pay(data.token, {
+            globalWindow.snap.pay(data.token, {
               onSuccess: async function (_result: any) {
-                toast.success("Pembayaran berhasil!");
-                await processOrder("paid");
+                toast.success("Pembayaran Berhasil Diverifikasi Midtrans!");
+                await processOrder("paid"); // Simpan ke Firestore dengan status lunas
               },
               onPending: async function (_result: any) {
-                toast.info("Pembayaran tertunda/menunggu diselesaikan.");
-                await processOrder("unpaid");
+                toast.info("Menunggu pembayaran diselesaikan pembeli.");
+                await processOrder("unpaid"); // Simpan dengan status menunggu transfer
               },
               onError: function (_result: any) {
-                toast.error("Pembayaran gagal!");
+                toast.error("Transaksi ditolak atau gagal diproses oleh bank.");
               },
               onClose: function () {
-                toast.info("Pembayaran ditutup sebelum selesai.");
-              }
+                toast.warning(
+                  "Anda menutup pop-up Midtrans sebelum menyelesaikan transaksi.",
+                );
+              },
             });
           } else {
-            toast.error("Sistem Midtrans gagal dimuat.");
+            toast.error("Gagal memuat script pop-up Midtrans Snap di browser.");
           }
         } else {
-          toast.error("Gagal mendapatkan token: " + (data.error || "Kesalahan tidak diketahui"));
+          toast.error(
+            "Gagal mendapatkan token: " +
+              (data.error || "Kesalahan internal backend."),
+          );
         }
       } else {
-        toast.info("Mode Demo: Memproses pembayaran tanpa server Midtrans.");
+        // Fallback Mode Demo jika server backend Node.js belum kamu nyalakan
+        toast.info(
+          "Mode Demo: Server pembayaran offline, memproses via simulasi antrean.",
+        );
         setTimeout(async () => {
           await processOrder("pending_verification");
         }, 1500);
       }
     } catch (error: unknown) {
-      toast.error("Gagal terhubung ke sistem pembayaran: " + (error as Error).message);
+      toast.error(
+        "Terjadi galat koneksi pembayaran: " + (error as Error).message,
+      );
     } finally {
       setIsProcessingPayment(false);
     }

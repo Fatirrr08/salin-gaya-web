@@ -21,6 +21,7 @@ export interface RTDBProduct {
   images: string[];
   aiEligibilityScore: string;
   createdAt: any | number | string | null;
+  aiGrade: string;
 }
 
 // Staggered list animation variant
@@ -136,7 +137,7 @@ export default function ProductCard({
               </div>
             )}
             <div className="absolute top-2 left-2 bg-[#5C3A21] text-white text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm z-20">
-              Grade A
+              GRADE {product.aiGrade}
             </div>
           </div>
 
