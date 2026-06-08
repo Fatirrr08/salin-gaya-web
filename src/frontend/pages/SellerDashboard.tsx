@@ -102,18 +102,30 @@ export default function SellerDashboard() {
   }, [currentUser, role]);
 
   const handleDelete = async (product: RTDBProduct) => {
+    // 1. Validasi Awal: Pastikan objek user login aktif sudah siap
+    if (!currentUser) {
+      toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
+      return;
+    }
+
+    // 2. Validasi Kepemilikan: Pastikan UID penjual di produk COCOK dengan UID akun yang login
+    if (!product.sellerUid || product.sellerUid !== currentUser.uid) {
+      toast.error(
+        "Akses Ditolak: Anda tidak diizinkan menghapus produk toko lain!",
+      );
+      return;
+    }
+
     if (!window.confirm(`Yakin ingin menghapus ${product.name}?`)) return;
 
     try {
-      // 1. Delete from RTDB
+      // Langkah 1: Hapus data dari Realtime Database (RTDB) terlebih dahulu
       await remove(dbRef(db, `products/${product.id}`));
 
-      // 2. Delete images from Storage
+      // Langkah 2: Hapus seluruh aset gambar produk dari Firebase Storage
       if (product.images && product.images.length > 0) {
-        const deletePromises = product.images?.map(async (imageUrl) => {
+        const deletePromises = product.images.map(async (imageUrl) => {
           try {
-            // Ekstrak path dari URL Firebase Storage. Ini pendekatan sederhana,
-            // untuk lebih robust bisa menyimpan path asli di database.
             const decodedUrl = decodeURIComponent(imageUrl);
             const pathStart = decodedUrl.indexOf("/o/") + 3;
             const pathEnd = decodedUrl.indexOf("?alt=media");
@@ -123,16 +135,21 @@ export default function SellerDashboard() {
               await deleteObject(fileRef);
             }
           } catch (e) {
-            console.error(e);
+            console.error("Gagal menghapus file gambar di Storage:", e);
           }
         });
         await Promise.all(deletePromises);
       }
 
-      toast.success("Produk dihapus");
+      toast.success("Produk berhasil dihapus");
+
+      // Langkah 3: Perbarui state lokal agar produk langsung hilang dari daftar tanpa reload browser
+      setProducts((prevProducts) =>
+        prevProducts.filter((p) => p.id !== product.id),
+      );
     } catch (error) {
-      console.error(error);
-      toast.error("Gagal menghapus produk");
+      console.error("Firebase Delete Error:", error);
+      toast.error("Gagal menghapus produk dari server");
     }
   };
 
