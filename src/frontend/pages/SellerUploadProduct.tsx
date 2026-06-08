@@ -215,8 +215,8 @@ ATURAN WAJIB (STRICT RULES) UNTUK PENOLAKAN:
 }
 Kriteria grade normal (jika lolos aturan wajib): A=semua skor ≥80, B=rata-rata ≥65, C=rata-rata ≥45.`;
 
-  const inlineDataParts = imagesData.map(img => ({
-    inline_data: { mime_type: img.mimeType, data: img.base64 }
+  const inlineDataParts = imagesData.map((img) => ({
+    inline_data: { mime_type: img.mimeType, data: img.base64 },
   }));
 
   const body = {
@@ -225,10 +225,7 @@ Kriteria grade normal (jika lolos aturan wajib): A=semua skor ≥80, B=rata-rata
     },
     contents: [
       {
-        parts: [
-          { text: prompt },
-          ...inlineDataParts,
-        ],
+        parts: [{ text: prompt }, ...inlineDataParts],
       },
     ],
   };
@@ -379,23 +376,33 @@ export default function SellerUploadProduct() {
       // Kompres semua gambar secara otomatis sebelum dikirim ke AI
       const compressedImages = await Promise.all(
         images.map(async (img) => {
-          const { base64, mimeType } = await compressImageToBase64(img, 600, 600, 0.5);
-          const cleanBase64 = base64.includes(",") ? base64.split(",")[1] : base64;
+          const { base64, mimeType } = await compressImageToBase64(
+            img,
+            600,
+            600,
+            0.5,
+          );
+          const cleanBase64 = base64.includes(",")
+            ? base64.split(",")[1]
+            : base64;
           return { base64: cleanBase64, mimeType };
-        })
+        }),
       );
 
       const result = await callGeminiVision(compressedImages);
       setAiResult(result);
-      
+
       // Asisten Auto-fill: Isi Judul & Deskripsi jika masih kosong
       let appliedName = name;
       if (result.suggestedName && !name) {
-         setName(result.suggestedName);
-         appliedName = result.suggestedName;
+        setName(result.suggestedName);
+        appliedName = result.suggestedName;
       }
       if (result.suggestedDescription && !description) {
-         setDescription(result.suggestedDescription + (result.style ? `\n\nStyle: ${result.style}` : ""));
+        setDescription(
+          result.suggestedDescription +
+            (result.style ? `\n\nStyle: ${result.style}` : ""),
+        );
       }
 
       if (result.approved) {
@@ -407,7 +414,10 @@ export default function SellerUploadProduct() {
         );
         setCertificateUrl(certUrl);
         toast.success(`Grade ${result.grade} — Barang layak dijual!`, {
-          description: result.suggestedName && !name ? "AI telah otomatis mengisi Judul & Deskripsi untuk Anda!" : "",
+          description:
+            result.suggestedName && !name
+              ? "AI telah otomatis mengisi Judul & Deskripsi untuk Anda!"
+              : "",
         });
       } else {
         toast.error(`Grade ${result.grade} — ${result.summary}`);
