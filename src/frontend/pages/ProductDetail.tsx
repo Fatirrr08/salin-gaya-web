@@ -155,9 +155,6 @@ export default function ProductDetail() {
   const handleAddToCart = () => {
     if (product) {
       addToCart(product);
-      toast.success("Masuk Keranjang", {
-        description: `${product.name} ditambahkan.`,
-      });
     }
   };
 
