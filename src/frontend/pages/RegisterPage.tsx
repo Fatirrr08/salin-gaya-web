@@ -116,21 +116,23 @@ export default function RegisterPage() {
     otpCode: string,
     namaPengguna: string,
   ) => {
-    const actionText = "mendaftar akun";
-    const messageTemplate = `*🔐 VERIFIKASI KEAMANAN SALIN GAYA 🔐*
+    const messageTemplate = `Halo Kak *${namaPengguna}*! 👋
 
-Halo *${namaPengguna}*,
-Berikut adalah kode OTP rahasia Anda untuk ${actionText} Salin Gaya:
+Selamat datang di Salin Gaya, destinasi fashion terbaik Anda! 🛍️✨
+Untuk menyelesaikan proses *Pembuatan Akun Baru*, kami memerlukan verifikasi nomor Anda.
 
-*${otpCode}*
+Berikut adalah Kode OTP Rahasia Anda:
+👉 *${otpCode}* 👈
 
-⚠️ *PERHATIAN:*
-Jangan pernah memberikan kode ini kepada siapa pun, *termasuk* pihak Salin Gaya. Demi keamanan, kode ini hanya berlaku selama 5 menit.
+🚨 *PANDUAN KEAMANAN:*
+1. Kode ini hanya berlaku selama *5 menit*.
+2. *JANGAN PERNAH* membagikan kode ini kepada siapapun.
+3. Pihak Salin Gaya *TIDAK AKAN PERNAH* meminta kode OTP Anda dengan alasan apapun.
 
-Jika Anda tidak merasa melakukan aktivitas ini, mohon abaikan pesan ini.
+Jika Kakak merasa tidak pernah mendaftar di Salin Gaya, mohon abaikan pesan ini. Pastikan data diri Kakak tetap aman.
 
-Terima kasih,
-*Tim Salin Gaya* 🛍️`;
+Terima kasih telah mempercayakan gaya Anda pada kami!
+*Tim Keamanan Salin Gaya* 🛡️`;
 
     try {
       const response = await fetch("https://api.fonnte.com/send", {
@@ -139,7 +141,7 @@ Terima kasih,
           Authorization: import.meta.env.VITE_FONNTE_TOKEN,
         },
         body: new URLSearchParams({
-          target: String(phone),
+          target: String(phone).replace(/\+/g, ""),
           message: messageTemplate,
         }),
       });
@@ -486,12 +488,20 @@ Terima kasih,
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   placeholder="Masukkan 6 angka OTP"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Only update if the value consists of digits
+                    if (/^\d*$/.test(val)) {
+                      setOtp(val);
+                    }
+                  }}
                   disabled={isLoading}
                   maxLength={6}
-                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-base font-medium text-gray-800 placeholder-gray-400 focus:ring-2 focus:ring-primary outline-none text-center tracking-widest transition-all"
+                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-base font-medium text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary outline-none text-center tracking-widest transition-all"
                 />
               </div>
               <button

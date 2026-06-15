@@ -10,6 +10,7 @@ import { db } from "@/backend/config/firebase";
 import { ref as dbRef, onValue } from "firebase/database";
 import { formatPrice, getValidImageUrl } from "@/lib/utils";
 import { getChatRoomId, createOrOpenChatSession } from "@/backend/services/chatService";
+import { getUserData } from "@/backend/services/authService";
 import LazyImage from "@/frontend/components/ui/LazyImage";
 
 export interface RTDBProduct {
@@ -91,6 +92,21 @@ export default function ProductCard({
 
     const roomId = getChatRoomId(currentUser.uid, sellerId);
     try {
+      let sellerName = "Penjual";
+      let sellerPhoto = null;
+      let sellerRole = "Penjual";
+
+      try {
+        const sellerData = await getUserData(sellerId);
+        if (sellerData) {
+          sellerName = sellerData.name || "Penjual";
+          sellerPhoto = sellerData.avatar || null;
+          sellerRole = sellerData.role || "Penjual";
+        }
+      } catch (err) {
+        console.error("Gagal mendapatkan data penjual:", err);
+      }
+
       await createOrOpenChatSession(
         roomId,
         currentUser.uid,
@@ -98,9 +114,9 @@ export default function ProductCard({
         currentUser.photoURL || null,
         role || "Pembeli",
         sellerId,
-        "Penjual",
-        null,
-        "Penjual"
+        sellerName,
+        sellerPhoto,
+        sellerRole
       );
       navigate(`/inbox/${roomId}`);
     } catch {

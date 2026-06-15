@@ -8,7 +8,7 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
-import { X, MapPin, Loader2, Search } from "lucide-react";
+import { X, MapPin, Loader2, Search, Navigation } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
@@ -36,11 +36,18 @@ interface MapModalProps {
   sellerLocations?: { lat: number; lng: number }[];
 }
 
+interface SearchResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+}
+
 // Komponen tambahan untuk update center peta secara terprogram
 function MapUpdater({ center }: { center: L.LatLng }) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, map.getZoom(), { animate: true });
+    map.flyTo(center, 16, { animate: true, duration: 1.5 });
   }, [center, map]);
   return null;
 }
@@ -62,19 +69,32 @@ export default function MapModal({
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
 
   const markerRef = useRef<L.Marker>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Initialize Map
   useEffect(() => {
     if (isOpen) {
-      // Small delay to allow map layout to settle
       setTimeout(() => {
         window.dispatchEvent(new Event("resize"));
       }, 100);
 
-      // Auto fetch location for default position if empty
       if (!addressData) {
         fetchAddress(position.lat, position.lng);
       }
@@ -102,7 +122,7 @@ export default function MapModal({
 
       setAddressData({ address: fullAddress, city, province });
     } catch (error) {
-      toast.error("Gagal mendapatkan nama jalan", {
+      toast.error("Gagal mendapatkan detail alamat", {
         description: "Pastikan koneksi internet stabil.",
       });
     } finally {
@@ -116,15 +136,20 @@ export default function MapModal({
       click(e) {
         setPosition(e.latlng);
         fetchAddress(e.latlng.lat, e.latlng.lng);
+        setShowDropdown(false);
       },
     });
     return null;
   };
 
-  // Debounced Search Function
+  // Debounced Search Function (Autocomplete)
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    if (!query) return;
+    if (!query) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
@@ -132,28 +157,56 @@ export default function MapModal({
       setIsSearching(true);
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=id&limit=1`,
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=id&limit=5`,
         );
         if (!res.ok) throw new Error("Search API failed");
         const data = await res.json();
-
-        if (data && data.length > 0) {
-          const lat = parseFloat(data[0].lat);
-          const lon = parseFloat(data[0].lon);
-          const newPos = new L.LatLng(lat, lon);
-          setPosition(newPos);
-          fetchAddress(lat, lon);
-        } else {
-          toast.error("Lokasi tidak ditemukan", {
-            description:
-              "Coba gunakan nama jalan atau kota yang lebih spesifik.",
-          });
-        }
+        
+        setSearchResults(data);
+        setShowDropdown(true);
       } catch (err) {
+        console.error(err);
       } finally {
         setIsSearching(false);
       }
-    }, 800); // 800ms debounce
+    }, 600); // 600ms debounce
+  };
+
+  const handleSelectResult = (result: SearchResult) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    const newPos = new L.LatLng(lat, lon);
+    
+    setPosition(newPos);
+    fetchAddress(lat, lon);
+    setSearchQuery(result.display_name);
+    setShowDropdown(false);
+  };
+
+  const handleCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Browser Anda tidak mendukung deteksi lokasi (GPS).");
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const newPos = new L.LatLng(latitude, longitude);
+        setPosition(newPos);
+        fetchAddress(latitude, longitude);
+        setIsLocating(false);
+        toast.success("Lokasi ditemukan!");
+      },
+      (err) => {
+        setIsLocating(false);
+        toast.error("Gagal mendapatkan lokasi GPS", {
+          description: "Pastikan izin akses lokasi aktif di perangkat/browser Anda.",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   const eventHandlers = useMemo(
@@ -173,14 +226,14 @@ export default function MapModal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 md:p-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="w-full max-w-2xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            className="w-full max-w-2xl bg-card rounded-2xl shadow-2xl overflow-visible flex flex-col max-h-[90vh]"
           >
-            <div className="p-4 border-b border-border flex justify-between items-center bg-secondary/50">
+            <div className="p-4 border-b border-border flex justify-between items-center bg-secondary/50 rounded-t-2xl shrink-0">
               <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-primary" /> Pilih Lokasi
                 Pengiriman
@@ -193,26 +246,65 @@ export default function MapModal({
               </button>
             </div>
 
-            <div className="p-4 border-b border-border bg-secondary/30 relative">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Cari jalan, kecamatan, atau kota..."
-                  value={searchQuery}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary outline-none text-sm"
-                />
-                {isSearching && (
-                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />
-                )}
+            <div className="p-4 border-b border-border bg-secondary/30 relative shrink-0 z-50">
+              <div className="flex gap-2">
+                <div className="relative flex-1" ref={searchRef}>
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Cari jalan, kecamatan, atau kota..."
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    onFocus={() => { if(searchResults.length > 0) setShowDropdown(true); }}
+                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary outline-none text-sm shadow-sm transition-all"
+                  />
+                  {isSearching && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />
+                  )}
+
+                  {/* Autocomplete Dropdown */}
+                  <AnimatePresence>
+                    {showDropdown && searchResults.length > 0 && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto"
+                      >
+                        {searchResults.map((result) => (
+                          <button
+                            key={result.place_id}
+                            onClick={() => handleSelectResult(result)}
+                            className="w-full text-left p-3 hover:bg-secondary border-b border-border/50 last:border-0 flex items-start gap-3 transition-colors"
+                          >
+                            <MapPin className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                            <span className="text-sm text-foreground line-clamp-2">{result.display_name}</span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+                
+                <button
+                  onClick={handleCurrentLocation}
+                  disabled={isLocating}
+                  className="px-4 py-2 bg-background border border-border rounded-lg text-foreground shadow-sm hover:bg-secondary transition-colors flex items-center justify-center shrink-0 disabled:opacity-50"
+                  title="Gunakan Lokasi Saat Ini"
+                >
+                  {isLocating ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  ) : (
+                    <Navigation className="w-5 h-5 text-primary" />
+                  )}
+                </button>
               </div>
             </div>
 
-            <div className="relative h-[50vh] min-h-[300px] max-h-[500px] w-full bg-muted overflow-hidden">
+            <div className="relative flex-1 min-h-[300px] max-h-[500px] w-full bg-muted z-0">
               <MapContainer
                 center={position}
-                zoom={13}
+                zoom={16}
                 scrollWheelZoom={true}
                 className="h-full w-full"
                 maxBounds={[
@@ -254,22 +346,21 @@ export default function MapModal({
               </MapContainer>
             </div>
 
-            <div className="p-5 border-t border-border bg-card">
+            <div className="p-4 md:p-5 border-t border-border bg-card rounded-b-2xl shrink-0">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 Alamat Terpilih
               </p>
               <div className="bg-secondary/30 border border-border p-3 rounded-lg min-h-[60px] flex items-center">
                 {isLoading ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Sedang memuat
-                    alamat...
+                    <Loader2 className="w-4 h-4 animate-spin" /> Menganalisa koordinat GPS...
                   </div>
                 ) : addressData ? (
                   <div>
                     <p className="text-sm font-medium text-foreground line-clamp-2">
                       {addressData.address}
                     </p>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
                       <span className="text-[11px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">
                         {addressData.city || "Kota Tidak Diketahui"}
                       </span>
@@ -285,10 +376,10 @@ export default function MapModal({
                 )}
               </div>
 
-              <div className="flex gap-3 mt-5">
+              <div className="flex gap-3 mt-4 md:mt-5">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 border border-border text-foreground text-sm font-medium rounded-lg hover:bg-secondary transition-colors"
+                  className="px-4 py-2.5 border border-border text-foreground text-sm font-medium rounded-lg hover:bg-secondary transition-colors"
                 >
                   Batal
                 </button>
@@ -308,7 +399,7 @@ export default function MapModal({
                     }
                   }}
                   disabled={isLoading || !addressData}
-                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground text-sm font-bold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-bold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
                   Gunakan Lokasi Ini
                 </button>

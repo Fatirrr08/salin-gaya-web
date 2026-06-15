@@ -69,6 +69,14 @@ export default function TwoFactorSettings() {
         return;
       }
       
+      const fonnteToken = import.meta.env.VITE_FONNTE_TOKEN;
+      if (!fonnteToken) {
+        toast.error("Konfigurasi Sistem Belum Lengkap", {
+          description: "API Key Fonnte (VITE_FONNTE_TOKEN) belum diatur di environment server."
+        });
+        return;
+      }
+
       setIsSending(true);
       try {
         const formattedPhone = phone.startsWith("0")

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
 import { db, storage } from "@/backend/config/firebase";
-import { ref as dbRef, push, set, serverTimestamp } from "firebase/database";
+import { ref as dbRef, push, set, serverTimestamp, get } from "firebase/database";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useNavigate } from "react-router-dom";
 import {
@@ -236,7 +236,11 @@ Kriteria grade normal (jika lolos aturan wajib): A=semua skor ≥80, B=rata-rata
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) throw new Error("Gemini API error: " + res.status);
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error("Gemini API error:", res.status, errorText);
+    throw new Error(`Gemini API error ${res.status}: ${errorText}`);
+  }
 
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
@@ -305,6 +309,30 @@ export default function SellerUploadProduct() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const dropRef = useRef<HTMLDivElement>(null);
+
+  // Address validation check
+  const [hasValidAddress, setHasValidAddress] = useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    if (!currentUser) return;
+    const fetchAddress = async () => {
+      try {
+        const snap = await get(dbRef(db, `users/${currentUser.uid}/address`));
+        if (snap.exists() && snap.val().street && snap.val().city) {
+          setHasValidAddress(true);
+        } else {
+          setHasValidAddress(false);
+          toast.error("Alamat belum lengkap", {
+            description: "Mohon lengkapi alamat lengkap dan titik lokasi peta Anda di Profil sebelum mulai berjualan."
+          });
+          navigate("/profile");
+        }
+      } catch (err) {
+        console.error("Failed to check address", err);
+      }
+    };
+    fetchAddress();
+  }, [currentUser, navigate]);
 
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -378,9 +406,9 @@ export default function SellerUploadProduct() {
         images.map(async (img) => {
           const { base64, mimeType } = await compressImageToBase64(
             img,
-            600,
-            600,
-            0.5,
+            500,
+            500,
+            0.4,
           );
           const cleanBase64 = base64.includes(",")
             ? base64.split(",")[1]
@@ -429,8 +457,10 @@ export default function SellerUploadProduct() {
           errorMsg =
             "Kunci API tidak valid atau belum diatur (VITE_GEMINI_API_KEY kosong).";
         } else if (err.message.includes("Gemini API error")) {
-          errorMsg =
-            "Server AI sedang sibuk atau menolak permintaan (Payload terlalu besar).";
+          // Parse out part of the error message to display
+          const match = err.message.match(/Gemini API error \d+: (.*)/);
+          const detail = match ? match[1].substring(0, 100) : err.message;
+          errorMsg = `Server AI menolak permintaan: ${detail}...`;
         } else if (err instanceof SyntaxError) {
           errorMsg = "Format JSON dari AI gagal diproses. Silakan coba lagi.";
         } else {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs } from "firebase/firestore";
-import { dbFirestore } from "@/backend/config/firebase";
+import { ref, get, child } from "firebase/database";
+import { db } from "@/backend/config/firebase";
 import {
   CommandDialog,
   CommandGroup,
@@ -93,11 +93,14 @@ export default function GlobalSearch() {
     (async () => {
       setLoading(true);
       try {
-        const snap = await getDocs(collection(dbFirestore, "products"));
+        const snap = await get(ref(db, "products"));
         const fetched: Product[] = [];
-        snap.forEach((doc) =>
-          fetched.push({ id: doc.id, ...(doc.data() as Omit<Product, "id">) })
-        );
+        if (snap.exists()) {
+          const data = snap.val();
+          Object.keys(data).forEach((key) => {
+            fetched.push({ id: key, ...(data[key] as Omit<Product, "id">) });
+          });
+        }
         setProducts(fetched);
       } catch (e) {
         console.error("[GlobalSearch] fetch failed:", e);

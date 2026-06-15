@@ -455,6 +455,9 @@ export default function PaymentValidation() {
                         onChange={e => setRejectionReason(e.target.value)}
                         className="w-full px-4 py-3 border border-red-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20"
                       />
+                      <p className="text-xs text-red-600 font-medium px-1">
+                        ⚠️ Harap dicatat: Jika pembeli sudah terlanjur transfer sebagian dana, pengembalian uang (refund) harus ditransfer secara manual di luar sistem.
+                      </p>
                       <button 
                         onClick={() => handleValidatePayment("failed")}
                         disabled={isProcessing}

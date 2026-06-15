@@ -9,7 +9,7 @@ export default function Footer() {
           <div>
             <Link
               to="/"
-              className="font-display text-2xl font-bold text-[#A67B5B] tracking-tight mb-4 inline-block"
+              className="font-display text-xl sm:text-2xl font-bold text-[#A67B5B] tracking-tight mb-4 inline-block"
             >
               SalinGaya
             </Link>
@@ -22,19 +22,19 @@ export default function Footer() {
             <h4 className="font-bold text-foreground mb-4">About</h4>
             <ul className="space-y-3 text-xs text-foreground font-medium">
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   About Salin Gaya
-                </Link>
+                </span>
               </li>
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   Our Story
-                </Link>
+                </span>
               </li>
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   Careers
-                </Link>
+                </span>
               </li>
             </ul>
           </div>
@@ -42,19 +42,19 @@ export default function Footer() {
             <h4 className="font-bold text-foreground mb-4">Support</h4>
             <ul className="space-y-3 text-xs text-foreground font-medium">
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   FAQ
-                </Link>
+                </span>
               </li>
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   Contact Us
-                </Link>
+                </span>
               </li>
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   Shipping Info
-                </Link>
+                </span>
               </li>
             </ul>
           </div>
@@ -62,14 +62,14 @@ export default function Footer() {
             <h4 className="font-bold text-foreground mb-4">Legal</h4>
             <ul className="space-y-3 text-xs text-foreground font-medium">
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   Privacy Policy
-                </Link>
+                </span>
               </li>
               <li>
-                <Link to="/" className="hover:text-[#A67B5B] transition-colors">
+                <span className="text-muted-foreground">
                   Terms of Service
-                </Link>
+                </span>
               </li>
             </ul>
           </div>

@@ -148,7 +148,7 @@ export default function Navbar() {
         {/* ── Logo ── */}
         <Link
           to="/"
-          className="font-display text-2xl font-bold text-[#5C3A21] tracking-tight flex-shrink-0"
+          className="font-display text-xl sm:text-2xl font-bold text-[#5C3A21] tracking-tight flex-shrink-0"
         >
           SalinGaya
         </Link>

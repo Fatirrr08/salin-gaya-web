@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy:hosting": "npm run build && npx firebase deploy --only hosting --project salin-gaya",
+    "deploy:backend": "npx firebase deploy --only database,firestore,storage --project impal-ce890"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
@@ -49,7 +51,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
-    "firebase": "^12.12.1",
+    "firebase": "^12.14.0",
     "framer-motion": "^11.18.2",
     "fuse.js": "^7.3.0",
     "input-otp": "^1.4.2",

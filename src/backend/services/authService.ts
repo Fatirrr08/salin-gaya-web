@@ -11,7 +11,7 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
-import { ref, set, get, child } from "firebase/database";
+import { ref, set, get, child, update } from "firebase/database";
 import { collection, query, getDocs, limit, doc, getDoc } from "firebase/firestore";
 import { auth, db, dbFirestore, googleProvider, facebookProvider } from "@/backend/config/firebase";
 
@@ -61,8 +61,14 @@ export async function loginWithGoogle(): Promise<User> {
       name: user.displayName || "User",
       email: user.email,
       role: "Pembeli",
+      photoURL: user.photoURL || null,
       createdAt: Date.now(),
     });
+  } else {
+    // Optionally update photoURL if it was missing
+    if (!snapshot.val().photoURL && user.photoURL) {
+      await update(ref(db, `users/${user.uid}`), { photoURL: user.photoURL });
+    }
   }
   return user;
 }
@@ -81,8 +87,13 @@ export async function loginWithFacebook(): Promise<User> {
       name: user.displayName || "User",
       email: user.email,
       role: "Pembeli",
+      photoURL: user.photoURL || null,
       createdAt: Date.now(),
     });
+  } else {
+    if (!snapshot.val().photoURL && user.photoURL) {
+      await update(ref(db, `users/${user.uid}`), { photoURL: user.photoURL });
+    }
   }
   return user;
 }

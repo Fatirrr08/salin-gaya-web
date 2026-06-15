@@ -55,6 +55,13 @@ service cloud.firestore {
       allow write: if isAuthenticated() && request.auth.uid == userId;
     }
 
+    // 4. CARTS
+    match /carts/{cartId} {
+      // Admin dapat membaca semua cart untuk tab Keranjang Aktif, user baca miliknya
+      allow read: if isAuthenticated(); 
+      allow write: if isAuthenticated() && request.auth.uid == cartId;
+    }
+
     // Default Fallback: Tolak semua yang tidak didefinisikan secara spesifik
     match /{document=**} {
       allow read, write: if false;

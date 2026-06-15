@@ -78,30 +78,10 @@ export default function CartPage() {
                         {formatPrice(item.price || 0)}
                       </p>
 
-                      {/* Qty controls */}
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <button
-                          onClick={() =>
-                            updateQuantity(item.id, item.quantity - 1)
-                          }
-                          className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
-                          aria-label="Kurangi"
-                        >
-                          <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
-                        </button>
-                        <span className="text-sm font-medium w-6 text-center">
-                          {item.quantity}
-                        </span>
-                        <button
-                          onClick={() =>
-                            updateQuantity(item.id, item.quantity + 1)
-                          }
-                          className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
-                          aria-label="Tambah"
-                        >
-                          <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                        </button>
-                      </div>
+                      {/* Qty controls removed because thrifting items have quantity 1 */}
+                      <span className="text-sm font-medium text-muted-foreground px-2">
+                        Qty: {item.quantity}
+                      </span>
                     </div>
                   </div>
                 </motion.div>

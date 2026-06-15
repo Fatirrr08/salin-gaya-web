@@ -57,7 +57,7 @@ export default function UpdatePasswordForm() {
             <KeyRound className="w-4 h-4 text-muted-foreground" />
             Password Baru
           </label>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <input
               id="newPassword"
               type="password"
@@ -65,14 +65,14 @@ export default function UpdatePasswordForm() {
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="Minimal 6 karakter..."
               disabled={isUpdating}
-              className="flex-1 px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full sm:flex-1 px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               required
               minLength={6}
             />
             <button
               type="submit"
               disabled={isUpdating || newPassword.length < 6}
-              className="bg-primary text-primary-foreground px-5 py-2.5 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 min-w-[140px]"
+              className="w-full sm:w-auto bg-primary text-primary-foreground px-5 py-2.5 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 sm:min-w-[140px]"
             >
               {isUpdating ? (
                 <>

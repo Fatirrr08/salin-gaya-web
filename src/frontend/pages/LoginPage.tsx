@@ -212,7 +212,7 @@ Terima kasih,
           Authorization: import.meta.env.VITE_FONNTE_TOKEN,
         },
         body: new URLSearchParams({
-          target: String(phone),
+          target: String(phone).replace(/\+/g, ""),
           message: message,
         }),
       });
@@ -427,6 +427,7 @@ Terima kasih,
         userRole = userData.role || "Pembeli";
       }
 
+      await user.reload(); // Ensure we have the latest emailVerified status
       if (!user.emailVerified && user.email && !user.email.endsWith("@salingaya.com")) {
         await auth.signOut();
         toast.error("Login gagal. Email Anda belum diverifikasi. Silakan cek inbox email Anda.");

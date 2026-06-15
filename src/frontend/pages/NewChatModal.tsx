@@ -14,7 +14,7 @@ import { UserData } from "@/backend/types";
 interface NewChatModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectUser: (userId: string, userName: string, userRole: string) => void;
+  onSelectUser: (userId: string, userName: string, userRole: string, userPhotoURL?: string | null) => void;
   currentUserId: string;
 }
 
@@ -34,6 +34,7 @@ export default function NewChatModal({
     } else {
       setSearchQuery("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const fetchUsers = async () => {
@@ -68,7 +69,7 @@ export default function NewChatModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-[#F9F6F0] p-0 overflow-hidden border-[#EBE5D9]">
+      <DialogContent overlayClassName="bg-black/10 backdrop-blur-none" className="sm:max-w-md bg-[#F9F6F0] p-0 overflow-hidden border-[#EBE5D9]">
         <DialogHeader className="p-4 border-b border-[#EBE5D9] bg-white">
           <DialogTitle className="text-[#5C3A21] font-bold flex items-center gap-2">
             <MessageCircle className="w-5 h-5 text-[#A67B5B]" />
@@ -107,12 +108,16 @@ export default function NewChatModal({
               {filteredUsers.map((user) => (
                 <button
                   key={user.uid}
-                  onClick={() => onSelectUser(user.uid, user.name, user.role)}
+                  onClick={() => onSelectUser(user.uid, user.name || "Pengguna", user.role || "Pembeli", user.photoURL)}
                   className="flex items-center gap-3 p-3 text-left hover:bg-white rounded-xl transition-colors border border-transparent hover:border-[#EBE5D9] group"
                 >
-                  <div className="w-10 h-10 rounded-full bg-[#5C3A21] text-white font-bold flex items-center justify-center shrink-0 shadow-sm text-sm">
-                    {getInitials(user.name || "User")}
-                  </div>
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.name} className="w-10 h-10 rounded-full object-cover shrink-0 border border-[#EBE5D9]" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-[#5C3A21] text-white font-bold flex items-center justify-center shrink-0 shadow-sm text-sm">
+                      {getInitials(user.name || "User")}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-stone-800 text-sm truncate group-hover:text-[#5C3A21] transition-colors">
                       {user.name}

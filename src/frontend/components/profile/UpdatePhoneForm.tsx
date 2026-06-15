@@ -182,7 +182,7 @@ Terima kasih,
               <Phone className="w-4 h-4 text-muted-foreground" />
               Nomor WhatsApp Baru
             </label>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <input
                 id="newPhone"
                 type="tel"
@@ -190,13 +190,13 @@ Terima kasih,
                 onChange={(e) => setNewPhone(e.target.value)}
                 placeholder="Contoh: 081234567890"
                 disabled={isSending}
-                className="flex-1 px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary transition-all disabled:opacity-50"
+                className="w-full sm:flex-1 px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary transition-all disabled:opacity-50"
                 required
               />
               <button
                 type="submit"
                 disabled={isSending || !newPhone.trim() || newPhone === currentPhone}
-                className="bg-primary text-primary-foreground px-5 py-2.5 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 min-w-[140px]"
+                className="w-full sm:w-auto bg-primary text-primary-foreground px-5 py-2.5 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50 sm:min-w-[140px]"
               >
                 {isSending ? (
                   <>
@@ -231,19 +231,19 @@ Terima kasih,
             />
           </div>
           
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
             <button
               type="button"
               onClick={() => setShowOtpInput(false)}
               disabled={isVerifying}
-              className="px-4 py-2.5 rounded-lg font-medium border border-border hover:bg-secondary text-sm transition-colors disabled:opacity-50"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-lg font-medium border border-border hover:bg-secondary text-sm transition-colors disabled:opacity-50"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={isVerifying || otpCode.length !== 6}
-              className="flex-1 bg-primary text-primary-foreground px-4 py-2.5 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full sm:flex-1 bg-primary text-primary-foreground px-4 py-2.5 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isVerifying ? (
                 <>
