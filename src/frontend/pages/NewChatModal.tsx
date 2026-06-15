@@ -114,9 +114,7 @@ export default function NewChatModal({
                   {user.photoURL ? (
                     <img src={user.photoURL} alt={user.name} className="w-10 h-10 rounded-full object-cover shrink-0 border border-[#EBE5D9]" />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-[#5C3A21] text-white font-bold flex items-center justify-center shrink-0 shadow-sm text-sm">
-                      {getInitials(user.name || "User")}
-                    </div>
+                    <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(user.name || "User")}&backgroundColor=F9F6F0`} alt={user.name} className="w-10 h-10 rounded-full object-cover shrink-0 border border-[#EBE5D9]" />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-stone-800 text-sm truncate group-hover:text-[#5C3A21] transition-colors">
