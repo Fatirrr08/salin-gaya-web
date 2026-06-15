@@ -43,12 +43,31 @@ interface SearchResult {
   lon: string;
 }
 
-// Komponen tambahan untuk update center peta secara terprogram
+// 🌟 Komponen tambahan untuk update center peta secara terprogram
 function MapUpdater({ center }: { center: L.LatLng }) {
   const map = useMap();
   useEffect(() => {
     map.flyTo(center, 16, { animate: true, duration: 1.5 });
   }, [center, map]);
+  return null;
+}
+
+// 🌟 SOLUSI UTAMA: Komponen pembantu untuk memaksa Leaflet menghitung ulang ukuran kontainer
+// Ini dijalankan langsung di dalam elemen MapContainer agar peta tidak macet abu-abu
+function MapContainerEvents() {
+  const map = useMap();
+
+  useEffect(() => {
+    // Jalankan berkala untuk memastikan render ubin OSM tidak tertinggal oleh animasi Framer Motion
+    const timers = [
+      setTimeout(() => map.invalidateSize(), 100),
+      setTimeout(() => map.invalidateSize(), 300),
+      setTimeout(() => map.invalidateSize(), 600),
+    ];
+
+    return () => timers.forEach(clearTimeout);
+  }, [map]);
+
   return null;
 }
 
@@ -59,8 +78,9 @@ export default function MapModal({
   sellerLocations = [],
 }: MapModalProps) {
   const [position, setPosition] = useState<L.LatLng>(
-    new L.LatLng(-6.2088, 106.8456),
-  ); // Jakarta default
+    // Set koordinat awal default ke Purwokerto/Banyumas (lokasi kampus Telkom) atau Jakarta
+    new L.LatLng(-7.4244, 109.2301),
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [addressData, setAddressData] = useState<{
     address: string;
@@ -80,7 +100,10 @@ export default function MapModal({
   // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+      if (
+        searchRef.current &&
+        !searchRef.current.contains(event.target as Node)
+      ) {
         setShowDropdown(false);
       }
     }
@@ -88,16 +111,18 @@ export default function MapModal({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Initialize Map
+  // Initialize Map & Geolocation Address
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
+      // Trigger resize global untuk memastikan map me-refresh layer ubin
+      const timer = setTimeout(() => {
         window.dispatchEvent(new Event("resize"));
-      }, 100);
+      }, 400);
 
       if (!addressData) {
         fetchAddress(position.lat, position.lng);
       }
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
@@ -161,7 +186,7 @@ export default function MapModal({
         );
         if (!res.ok) throw new Error("Search API failed");
         const data = await res.json();
-        
+
         setSearchResults(data);
         setShowDropdown(true);
       } catch (err) {
@@ -169,14 +194,14 @@ export default function MapModal({
       } finally {
         setIsSearching(false);
       }
-    }, 600); // 600ms debounce
+    }, 600);
   };
 
   const handleSelectResult = (result: SearchResult) => {
     const lat = parseFloat(result.lat);
     const lon = parseFloat(result.lon);
     const newPos = new L.LatLng(lat, lon);
-    
+
     setPosition(newPos);
     fetchAddress(lat, lon);
     setSearchQuery(result.display_name);
@@ -202,10 +227,11 @@ export default function MapModal({
       (err) => {
         setIsLocating(false);
         toast.error("Gagal mendapatkan lokasi GPS", {
-          description: "Pastikan izin akses lokasi aktif di perangkat/browser Anda.",
+          description:
+            "Pastikan izin akses lokasi aktif di perangkat/browser Anda.",
         });
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   };
 
@@ -255,7 +281,9 @@ export default function MapModal({
                     placeholder="Cari jalan, kecamatan, atau kota..."
                     value={searchQuery}
                     onChange={(e) => handleSearch(e.target.value)}
-                    onFocus={() => { if(searchResults.length > 0) setShowDropdown(true); }}
+                    onFocus={() => {
+                      if (searchResults.length > 0) setShowDropdown(true);
+                    }}
                     className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary outline-none text-sm shadow-sm transition-all"
                   />
                   {isSearching && (
@@ -265,7 +293,7 @@ export default function MapModal({
                   {/* Autocomplete Dropdown */}
                   <AnimatePresence>
                     {showDropdown && searchResults.length > 0 && (
-                      <motion.div 
+                      <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
@@ -278,14 +306,16 @@ export default function MapModal({
                             className="w-full text-left p-3 hover:bg-secondary border-b border-border/50 last:border-0 flex items-start gap-3 transition-colors"
                           >
                             <MapPin className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                            <span className="text-sm text-foreground line-clamp-2">{result.display_name}</span>
+                            <span className="text-sm text-foreground line-clamp-2">
+                              {result.display_name}
+                            </span>
                           </button>
                         ))}
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
-                
+
                 <button
                   onClick={handleCurrentLocation}
                   disabled={isLocating}
@@ -301,24 +331,26 @@ export default function MapModal({
               </div>
             </div>
 
-            <div className="relative flex-1 min-h-[300px] max-h-[500px] w-full bg-muted z-0">
+            {/* Kontainer Peta dengan Tinggi Absolut yang Tegas */}
+            <div className="relative flex-1 min-h-[350px] max-h-[500px] w-full bg-muted z-0">
               <MapContainer
                 center={position}
                 zoom={16}
                 scrollWheelZoom={true}
-                className="h-full w-full"
+                className="h-full w-full absolute inset-0"
                 maxBounds={[
                   [-11.0, 95.0],
                   [6.0, 141.0],
                 ]} // Geofencing Indonesia
                 minZoom={5}
               >
+                <MapContainerEvents />{" "}
+                {/* 🌟 Pemicu re-render ukuran kontainer otomatis */}
                 <MapUpdater center={position} />
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-
                 {/* Visualisasi Rute dari Semua Penjual ke Titik Pembeli */}
                 {sellerLocations?.map((seller, idx) => (
                   <Polyline
@@ -335,7 +367,6 @@ export default function MapModal({
                     }}
                   />
                 ))}
-
                 <Marker
                   draggable={true}
                   eventHandlers={eventHandlers}
@@ -353,7 +384,8 @@ export default function MapModal({
               <div className="bg-secondary/30 border border-border p-3 rounded-lg min-h-[60px] flex items-center">
                 {isLoading ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Menganalisa koordinat GPS...
+                    <Loader2 className="w-4 h-4 animate-spin" /> Menganalisa
+                    koordinat GPS...
                   </div>
                 ) : addressData ? (
                   <div>
