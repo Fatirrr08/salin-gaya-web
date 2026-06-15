@@ -764,6 +764,11 @@ export default function Inbox() {
                               )}
                             </div>
                           </div>
+                          {isMe && currentUser && (
+                            <div className="shrink-0 mb-1">
+                              <Avatar name={currentUser.displayName || "Anda"} photo={currentUser.photoURL} size="sm" />
+                            </div>
+                          )}
                         </div>
                       );
                     })
