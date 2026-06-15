@@ -23,17 +23,22 @@ import Footer from "@/frontend/components/layout/Footer";
 import MapModal from "@/frontend/components/ui/MapModal";
 import { toast } from "sonner";
 import { db, dbFirestore } from "@/backend/config/firebase";
-import { collection, addDoc, serverTimestamp as firestoreTimestamp } from "firebase/firestore";
 import {
-  ref as dbRef,
-  get,
-  child,
-} from "firebase/database";
+  collection,
+  addDoc,
+  serverTimestamp as firestoreTimestamp,
+} from "firebase/firestore";
+import { ref as dbRef, get, child } from "firebase/database";
 
 const COURIERS = [
   { id: "JNE", label: "JNE Reguler", logo: "/images/JNE.png", rate: 15000 },
   { id: "J&T", label: "J&T Express", logo: "/images/J&T.png", rate: 18000 },
-  { id: "SiCepat", label: "SiCepat HALU", logo: "/images/Sicepat Ekspres.png", rate: 12000 },
+  {
+    id: "SiCepat",
+    label: "SiCepat HALU",
+    logo: "/images/Sicepat Ekspres.png",
+    rate: 12000,
+  },
 ];
 
 const PAYMENT_CATEGORIES = [
@@ -66,37 +71,24 @@ const PLATFORM_FEE = 1000;
 const PAYMENT_FEE = 2000;
 
 export default function Checkout() {
-  const { clearCart } = useCart();
+  const { clearCart, removeFromCart } = useCart();
   const cartContext = useCart();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
-  const [items, setItems] = useState<CartItem[]>([]);
-  const [subtotal, setSubtotal] = useState(0);
+  // 🌟 SEKARANG DATA ITEMS & SUBTOTAL DIREFERENSIKAN LANGSUNG SECARA REAL-TIME DARI CART CONTEXT
+  // Ini mencegah "hilang misterius" atau desinkronisasi cache sessionStorage saat bolak-balik halaman
+  const items = cartContext.items;
+  const subtotal = items.reduce(
+    (total, item) => total + item.price * item.quantity,
+    0,
+  );
 
-  // Sync Keranjang (fallback to session storage to prevent "Keranjang kosong" on refresh)
-  useEffect(() => {
-    let currentItems: CartItem[] = [];
-    if (location.state?.items) {
-      currentItems = location.state.items;
-      sessionStorage.setItem("checkout_items", JSON.stringify(currentItems));
-    } else {
-      const sessionItems = sessionStorage.getItem("checkout_items");
-      if (sessionItems) {
-        currentItems = JSON.parse(sessionItems);
-      } else {
-        currentItems = cartContext.items;
-      }
-    }
-    setItems(currentItems);
-    setSubtotal(
-      currentItems.reduce(
-        (total, item) => total + item.price * item.quantity,
-        0,
-      ),
-    );
-  }, [location.state, cartContext.items]);
+  // Fungsi Penangan aksi hapus item di dalam halaman Checkout
+  const handleRemoveItem = (id: string) => {
+    removeFromCart(id);
+    toast.success("Produk berhasil dihapus dari pesanan");
+  };
 
   const [address, setAddress] = useState("");
   const [buyerCity, setBuyerCity] = useState("");
@@ -104,7 +96,6 @@ export default function Checkout() {
   const [sellerAddresses, setSellerAddresses] = useState<Record<string, any>>(
     {},
   );
-
 
   const [courier, setCourier] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
@@ -117,7 +108,7 @@ export default function Checkout() {
   useEffect(() => {
     const snapScript = "https://app.sandbox.midtrans.com/snap/snap.js";
     const clientKey = import.meta.env.VITE_MIDTRANS_CLIENT_KEY;
-    
+
     if (!clientKey) {
       console.warn("Midtrans Client Key is missing in environment variables.");
     }
@@ -137,12 +128,11 @@ export default function Checkout() {
   const [buyerLat, setBuyerLat] = useState<number | null>(null);
   const [buyerLng, setBuyerLng] = useState<number | null>(null);
 
-
   // Fetch Buyer and Seller Addresses
-  React.useEffect(() => {
+  useEffect(() => {
     const fetchAddresses = async () => {
-      if (!currentUser) return;
-      
+      if (!currentUser || items.length === 0) return;
+
       try {
         const rootRef = dbRef(db);
 
@@ -175,7 +165,7 @@ export default function Checkout() {
                 province: "DKI Jakarta",
                 lat: -6.2088,
                 lng: 106.8456,
-              }; // Mock admin address
+              };
               return;
             }
             const sellerSnap = await get(
@@ -210,8 +200,6 @@ export default function Checkout() {
         setSellerAddresses(sellerData);
       } catch (error) {
         console.error("Error fetching addresses", error);
-      } finally {
-        
       }
     };
 
@@ -242,20 +230,20 @@ export default function Checkout() {
   }, [items]);
 
   // Calculate Dynamic Shipping Cost
-  React.useEffect(() => {
+  useEffect(() => {
     if (
       !courier ||
       !buyerCity ||
       buyerLat === null ||
       buyerLng === null ||
-      Object.keys(sellerAddresses).length === 0
+      Object.keys(sellerAddresses).length === 0 ||
+      items.length === 0
     ) {
       return;
     }
 
     setIsCalculatingShipping(true);
 
-    // Simulate slight delay to show skeleton
     const timeout = setTimeout(() => {
       const details: Record<
         string,
@@ -267,41 +255,33 @@ export default function Checkout() {
         const sLat = sAddr.lat || -6.2088;
         const sLng = sAddr.lng || 106.8456;
 
-        // 1. Calculate Distance
         const distanceKm = getHaversineDistance(sLat, sLng, buyerLat, buyerLng);
+        const sellerItems = itemsBySeller[sellerUid];
+        let sellerWeightKg = 0;
 
-        // 2. Calculate Total Billed Weight for this seller
-        const items = itemsBySeller[sellerUid];
-        let totalWeightKg = 0;
-        let totalActualKg = 0;
-        let totalVolumetricKg = 0;
-
-        items.forEach((item) => {
-          const wGram = (item as any).weight ? Number((item as any).weight) : 1000; // Fallback 1000 gram
+        sellerItems.forEach((item) => {
+          const wGram = (item as any).weight
+            ? Number((item as any).weight)
+            : 1000;
           const actualW = wGram / 1000;
 
-          const l = (item as any).length ? Number((item as any).length) : 30; // Fallback 30cm
-          const w = (item as any).width ? Number((item as any).width) : 20; // Fallback 20cm
-          const h = (item as any).height ? Number((item as any).height) : 10; // Fallback 10cm
+          const l = (item as any).length ? Number((item as any).length) : 30;
+          const w = (item as any).width ? Number((item as any).width) : 20;
+          const h = (item as any).height ? Number((item as any).height) : 10;
 
-          const { billedWeight, actualWeight, volumetricWeight } =
-            getBilledWeight(actualW, l, w, h);
-          totalWeightKg += billedWeight * item.quantity;
-          totalActualKg += actualWeight * item.quantity;
-          totalVolumetricKg += volumetricWeight * item.quantity;
+          const { billedWeight } = getBilledWeight(actualW, l, w, h);
+          sellerWeightKg += billedWeight * item.quantity;
         });
 
-        // 3. Calculate shipping
         const shippingRes = calculateShipping(
           distanceKm,
-          totalWeightKg,
+          sellerWeightKg,
           courier,
         );
-
         details[sellerUid] = {
           ...shippingRes,
           distanceKm,
-          weightKg: totalWeightKg,
+          weightKg: sellerWeightKg,
         };
       });
 
@@ -309,15 +289,26 @@ export default function Checkout() {
     }, 600);
 
     return () => clearTimeout(timeout);
-  }, [courier, buyerCity, buyerLat, buyerLng, sellerAddresses, itemsBySeller]);
+  }, [
+    courier,
+    buyerCity,
+    buyerLat,
+    buyerLng,
+    sellerAddresses,
+    itemsBySeller,
+    items.length,
+  ]);
 
   const shippingCost = React.useMemo(() => {
-    const selectedCourier = COURIERS.find(c => c.id === courier);
-    if (!selectedCourier) return 0;
+    const selectedCourier = COURIERS.find((c) => c.id === courier);
+    if (!selectedCourier || items.length === 0) return 0;
     return totalWeightKg * selectedCourier.rate;
-  }, [courier, totalWeightKg]);
+  }, [courier, totalWeightKg, items.length]);
 
-  const grandTotal = subtotal + shippingCost + (courier ? PLATFORM_FEE + PAYMENT_FEE : 0);
+  const grandTotal =
+    items.length === 0
+      ? 0
+      : subtotal + shippingCost + (courier ? PLATFORM_FEE + PAYMENT_FEE : 0);
 
   const handleCheckout = async () => {
     if (!currentUser) {
@@ -364,26 +355,22 @@ export default function Checkout() {
       return;
     }
 
-    // Jalur Manual / Gambar Statis Jika Memilih QRIS Non-Automated bawaan tokomu
     if (paymentMethod === "QRIS") {
       setShowQrisModal(true);
       return;
     }
 
-    // ─── JALUR INTEGRASI AUTOMATED MIDTRANS SNAP ───
     setIsProcessingPayment(true);
 
     try {
-      // Membuat ID Pesanan Unik berprefix SG (Salin Gaya)
       const orderId = `SG-${Math.floor(100000 + Math.random() * 900000)}-${Date.now()}`;
 
-      // Menembak endpoint backend Node.js (/api/charge) yang telah disesuaikan
       const response = await fetch("http://localhost:5000/api/charge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId: orderId,
-          grossAmount: Math.round(grandTotal), // Midtrans mewajibkan angka bulat integer
+          grossAmount: Math.round(grandTotal),
           customerDetails: {
             first_name: currentUser.displayName || "Pembeli",
             email: currentUser.email || "",
@@ -409,11 +396,11 @@ export default function Checkout() {
             globalWindow.snap.pay(data.token, {
               onSuccess: async function (_result: any) {
                 toast.success("Pembayaran Berhasil Diverifikasi Midtrans!");
-                await processOrder("paid"); // Simpan ke Firestore dengan status lunas
+                await processOrder("paid");
               },
               onPending: async function (_result: any) {
                 toast.info("Menunggu pembayaran diselesaikan pembeli.");
-                await processOrder("unpaid"); // Simpan dengan status menunggu transfer
+                await processOrder("unpaid");
               },
               onError: function (_result: any) {
                 toast.error("Transaksi ditolak atau gagal diproses oleh bank.");
@@ -434,7 +421,6 @@ export default function Checkout() {
           );
         }
       } else {
-        // Fallback Mode Demo jika server backend Node.js belum kamu nyalakan
         toast.info(
           "Mode Demo: Server pembayaran offline, memproses via simulasi antrean.",
         );
@@ -459,7 +445,9 @@ export default function Checkout() {
         userId: currentUser.uid,
         buyerUid: currentUser.uid,
         items: items,
-        sellerUids: Array.from(new Set(items.map((item: any) => item.sellerUid || "admin"))),
+        sellerUids: Array.from(
+          new Set(items.map((item: any) => item.sellerUid || "admin")),
+        ),
         trackingNumbers: {},
         shippingAddress: {
           street: address,
@@ -485,16 +473,19 @@ export default function Checkout() {
 
       clearCart();
       toast.success("Pesanan Berhasil Dibuat!", {
-        description: overridePaymentStatus === "pending_verification" 
-          ? "Pembayaran sedang diverifikasi admin." 
-          : "Mohon segera selesaikan pembayaran Anda.",
+        description:
+          overridePaymentStatus === "pending_verification"
+            ? "Pembayaran sedang diverifikasi admin."
+            : "Mohon segera selesaikan pembayaran Anda.",
       });
 
       setTimeout(() => {
         navigate("/order-success");
       }, 2000);
     } catch (error: unknown) {
-      toast.error("Gagal memproses pesanan", { description: (error as Error).message });
+      toast.error("Gagal memproses pesanan", {
+        description: (error as Error).message,
+      });
       setIsProcessing(false);
     }
   };
@@ -587,22 +578,35 @@ export default function Checkout() {
             {/* Shipping Summary */}
             <section className="bg-card rounded-xl border border-border p-6 shadow-sm">
               <h2 className="text-xl font-bold flex items-center gap-2 mb-4">
-                <Truck className="w-5 h-5 text-primary" /> Ringkasan Berat Pengiriman
+                <Truck className="w-5 h-5 text-primary" /> Ringkasan Berat
+                Pengiriman
               </h2>
               <div className="flex flex-col gap-2 p-4 bg-secondary/50 rounded-lg border border-border/50">
                 <div className="flex items-start justify-between">
                   <div>
-                     <p className="text-sm font-medium text-foreground">Total Item</p>
-                     <p className="text-xs text-muted-foreground">{items.length} barang</p>
+                    <p className="text-sm font-medium text-foreground">
+                      Total Item
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {items.length} barang
+                    </p>
                   </div>
                   <div className="text-right">
-                     <p className="text-sm font-medium text-foreground">Total Berat</p>
-                     <p className="text-xs text-muted-foreground">{totalWeightGrams} gram</p>
+                    <p className="text-sm font-medium text-foreground">
+                      Total Berat
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {totalWeightGrams} gram
+                    </p>
                   </div>
                 </div>
                 <div className="mt-3 pt-3 border-t border-border/50 flex justify-between">
-                   <p className="text-sm font-bold text-foreground">Berat Ditagih (Pembulatan)</p>
-                   <p className="text-sm font-bold text-primary">{totalWeightKg} Kg</p>
+                  <p className="text-sm font-bold text-foreground">
+                    Berat Ditagih (Pembulatan)
+                  </p>
+                  <p className="text-sm font-bold text-primary">
+                    {totalWeightKg} Kg
+                  </p>
                 </div>
               </div>
             </section>
@@ -613,7 +617,8 @@ export default function Checkout() {
                 <Truck className="w-5 h-5 text-primary" /> Ekspedisi
               </h2>
               <p className="text-xs text-muted-foreground mb-4">
-                Ongkir dihitung secara dinamis: Total Berat (dibulatkan ke atas) dikali Tarif Dasar Kurir.
+                Ongkir dihitung secara dinamis: Total Berat (dibulatkan ke atas)
+                dikali Tarif Dasar Kurir.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {COURIERS?.map((c) => (
@@ -719,28 +724,51 @@ export default function Checkout() {
               <div className="space-y-4 mb-6 max-h-[300px] overflow-y-auto pr-2">
                 {!items || items.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    Keranjang kosong
+                    Keranjang kosong. Silakan tambahkan produk kembali dari
+                    katalog.
                   </p>
                 ) : (
                   items?.map((item: any) => (
-                    <div key={item.id as string} className="flex gap-3">
-                      <div className="w-16 h-16 rounded bg-muted overflow-hidden shrink-0 border border-border/50">
-                        <img
-                          src={getValidImageUrl(item)}
-                          alt={item.name as string}
-                          className="w-full h-full object-cover"
-                        />
+                    <div
+                      key={item.id as string}
+                      className="flex gap-3 items-center justify-between border-b border-border/40 pb-3 last:border-0 last:pb-0"
+                    >
+                      {/* Sisi Detail Info Produk */}
+                      <div className="flex gap-3 flex-1 min-w-0">
+                        <div className="w-16 h-16 rounded bg-muted overflow-hidden shrink-0 border border-border/50">
+                          <img
+                            src={getValidImageUrl(item)}
+                            alt={item.name as string}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-medium text-foreground line-clamp-1">
+                            {item.name}
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {item.quantity} x {formatPrice(item.price)}
+                          </p>
+                          <p className="font-bold text-sm text-foreground mt-1 block sm:hidden">
+                            {formatPrice(item.price * item.quantity)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-medium text-foreground line-clamp-1">
-                          {item.name}
-                        </h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {item.quantity} x {formatPrice(item.price)}
-                        </p>
-                      </div>
-                      <div className="font-bold text-sm text-foreground shrink-0">
-                        {formatPrice(item.price * item.quantity)}
+
+                      {/* Sisi Harga Desktop & Tombol Aksi Hapus */}
+                      <div className="flex flex-col items-end gap-2 shrink-0 pl-2">
+                        <div className="font-bold text-sm text-foreground hidden sm:block">
+                          {formatPrice(item.price * item.quantity)}
+                        </div>
+
+                        <button
+                          onClick={() => handleRemoveItem(item.id)}
+                          disabled={isProcessing}
+                          className="px-2.5 py-1 bg-destructive/10 hover:bg-destructive text-destructive hover:text-destructive-foreground text-[11px] font-bold rounded-md transition-all border border-destructive/20 disabled:opacity-50"
+                          type="button"
+                        >
+                          Hapus
+                        </button>
                       </div>
                     </div>
                   ))
@@ -749,36 +777,50 @@ export default function Checkout() {
 
               <div className="space-y-3 border-t border-border pt-4 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Harga ({items.length} Barang)</span>
+                  <span className="text-muted-foreground">
+                    Total Harga ({items.length} Barang)
+                  </span>
                   <span className="font-medium text-foreground">
                     {formatPrice(subtotal)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Ongkos Kirim</span>
+                  <span className="text-muted-foreground">
+                    Total Ongkos Kirim
+                  </span>
                   {isCalculatingShipping ? (
                     <span className="font-medium text-foreground animate-pulse">
                       ...
                     </span>
                   ) : (
                     <span className="font-medium text-foreground">
-                      {courier ? formatPrice(shippingCost) : "-"}
+                      {courier && items.length > 0
+                        ? formatPrice(shippingCost)
+                        : "-"}
                     </span>
                   )}
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Biaya Layanan Aplikasi</span>
+                  <span className="text-muted-foreground">
+                    Biaya Layanan Aplikasi
+                  </span>
                   <span className="font-medium text-foreground">
-                    {courier ? formatPrice(PLATFORM_FEE) : "-"}
+                    {courier && items.length > 0
+                      ? formatPrice(PLATFORM_FEE)
+                      : "-"}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Biaya Penanganan</span>
+                  <span className="text-muted-foreground">
+                    Biaya Penanganan
+                  </span>
                   <span className="font-medium text-foreground">
-                    {courier ? formatPrice(PAYMENT_FEE) : "-"}
+                    {courier && items.length > 0
+                      ? formatPrice(PAYMENT_FEE)
+                      : "-"}
                   </span>
                 </div>
-                
+
                 <div className="flex justify-between pt-3 border-t border-border mt-3">
                   <span className="font-bold text-base text-foreground">
                     Total Tagihan
@@ -793,10 +835,14 @@ export default function Checkout() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleCheckout}
-                disabled={isProcessing || isProcessingPayment || items.length === 0}
+                disabled={
+                  isProcessing || isProcessingPayment || items.length === 0
+                }
                 className="w-full mt-6 py-3.5 bg-primary text-primary-foreground font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
               >
-                {isProcessing || isProcessingPayment ? "Memproses..." : "Bayar Sekarang"}{" "}
+                {isProcessing || isProcessingPayment
+                  ? "Memproses..."
+                  : "Bayar Sekarang"}{" "}
                 <ChevronRight className="w-5 h-5" />
               </motion.button>
 
@@ -844,20 +890,25 @@ export default function Checkout() {
             >
               <h3 className="text-xl font-bold mb-2">Pembayaran QRIS</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Pindai kode QR di bawah ini menggunakan aplikasi M-Banking atau E-Wallet Anda.
+                Pindai kode QR di bawah ini menggunakan aplikasi M-Banking atau
+                E-Wallet Anda.
               </p>
-              
+
               <div className="bg-white p-4 rounded-xl inline-block mb-4 border border-border shadow-sm">
-                <img 
-                  src="/images/Qris.jpeg" 
-                  alt="QRIS Fatir" 
-                  className="w-64 h-64 mx-auto object-contain rounded-md" 
+                <img
+                  src="/images/Qris.jpeg"
+                  alt="QRIS Fatir"
+                  className="w-64 h-64 mx-auto object-contain rounded-md"
                 />
               </div>
 
               <div className="bg-secondary/50 p-3 rounded-lg border border-border mb-6">
-                <p className="text-xs text-muted-foreground mb-1">Total yang harus dibayar:</p>
-                <p className="text-xl font-bold text-primary">{formatPrice(grandTotal)}</p>
+                <p className="text-xs text-muted-foreground mb-1">
+                  Total yang harus dibayar:
+                </p>
+                <p className="text-xl font-bold text-primary">
+                  {formatPrice(grandTotal)}
+                </p>
               </div>
 
               <div className="flex flex-col gap-3">
