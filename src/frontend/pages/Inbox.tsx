@@ -105,7 +105,7 @@ function Avatar({
       {photo ? (
         <img src={photo} alt={name} className="w-full h-full object-cover" />
       ) : (
-        getInitials(name)
+        <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(name || "User")}&backgroundColor=F9F6F0`} alt={name} className="w-full h-full object-cover bg-[#F9F6F0]" />
       )}
     </div>
   );
