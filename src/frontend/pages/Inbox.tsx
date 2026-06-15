@@ -678,10 +678,15 @@ export default function Inbox() {
                       return (
                         <div
                           key={msg.id ?? idx}
-                          className={`flex ${isMe ? "justify-end" : "justify-start"} mb-1 group`}
+                          className={`flex ${isMe ? "justify-end" : "justify-start"} mb-2 group items-end gap-2`}
                           onMouseEnter={() => setHoveredMessageId(msg.id!)}
                           onMouseLeave={() => setHoveredMessageId(null)}
                         >
+                          {!isMe && selectedPeer && (
+                            <div className="shrink-0 mb-1">
+                              <Avatar name={selectedPeer.name} photo={selectedPeer.photo} size="sm" />
+                            </div>
+                          )}
                           <div
                             className={`
                               relative max-w-[75%] md:max-w-[65%] px-3 py-1.5 rounded-lg shadow-sm flex flex-col
