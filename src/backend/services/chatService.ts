@@ -81,20 +81,16 @@ export async function createOrOpenChatSession(
   userBRole: string
 ): Promise<void> {
   const chatRef = doc(dbFirestore, "chats", roomId);
-  try {
-    await setDoc(chatRef, {
-      id: roomId,
-      participants: [userA, userB],
-      participantDetails: {
-        [userA]: { name: userAName, avatar: userAAvatar, role: userARole },
-        [userB]: { name: userBName, avatar: userBAvatar, role: userBRole }
-      },
-      // Note: we don't set updatedAt here to avoid overriding the latest message time
-      // It will be set when a message is sent.
-    }, { merge: true });
-  } catch (err) {
-    console.error("Error creating/opening chat session:", err);
-  }
+  await setDoc(chatRef, {
+    id: roomId,
+    participants: [userA, userB],
+    participantDetails: {
+      [userA]: { name: userAName, avatar: userAAvatar, role: userARole },
+      [userB]: { name: userBName, avatar: userBAvatar, role: userBRole }
+    },
+    // Note: we don't set updatedAt here to avoid overriding the latest message time
+    // It will be set when a message is sent.
+  }, { merge: true });
 }
 
 /**
