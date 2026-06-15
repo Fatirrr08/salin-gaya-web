@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { collection, getDocs } from "firebase/firestore";
-import { dbFirestore } from "@/backend/config/firebase";
+import { ref, get, child } from "firebase/database";
+import { db } from "@/backend/config/firebase";
 import Navbar from "@/frontend/components/layout/Navbar";
 import { motion, AnimatePresence } from "framer-motion";
 import Fuse from "fuse.js";
@@ -37,11 +37,14 @@ export default function SearchPage() {
     const fetchProducts = async () => {
       setLoading(true);
       try {
-        const snapshot = await getDocs(collection(dbFirestore, "products"));
+        const snapshot = await get(ref(db, "products"));
         const fetched: RTDBProduct[] = [];
-        snapshot.forEach((doc) => {
-          fetched.push({ id: doc.id, ...doc.data() } as RTDBProduct);
-        });
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          Object.keys(data).forEach((key) => {
+            fetched.push({ id: key, ...data[key] } as RTDBProduct);
+          });
+        }
         setProducts(fetched);
       } catch (error) {
         console.error("Error fetching products", error);

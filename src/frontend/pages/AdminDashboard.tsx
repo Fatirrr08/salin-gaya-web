@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/frontend/contexts/AuthContext";
 import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
-import { dbFirestore, storage } from "@/backend/config/firebase";
-import { collection, getDocs, orderBy, query, updateDoc, doc, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { dbFirestore, storage, db } from "@/backend/config/firebase";
+import { collection, getDocs, orderBy, query, updateDoc, doc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { ref as dbRef, get, push, set, serverTimestamp as rtdbServerTimestamp } from "firebase/database";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
 import { Loader2, Plus, ShieldAlert, Eye, Package, Image as ImageIcon, MessageSquare, Wallet, DollarSign, Activity } from "lucide-react";
@@ -48,6 +49,51 @@ export default function AdminDashboard() {
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isUploadingProduct, setIsUploadingProduct] = useState(false);
   
+  // States for Refunds
+  const [selectedRefundOrder, setSelectedRefundOrder] = useState<OrderData | null>(null);
+  const [isRefundArbitrationModalOpen, setIsRefundArbitrationModalOpen] = useState(false);
+  const [refundAdminNotes, setRefundAdminNotes] = useState("");
+  const [isProcessingRefund, setIsProcessingRefund] = useState(false);
+
+  const openRefundArbitration = (order: OrderData) => {
+    setSelectedRefundOrder(order);
+    setRefundAdminNotes("");
+    setIsRefundArbitrationModalOpen(true);
+  };
+
+  const handleRefundDecision = async (decision: "approved" | "rejected") => {
+    if (!selectedRefundOrder) return;
+    if (decision === "rejected" && !refundAdminNotes) {
+      toast.error("Alasan penolakan wajib diisi");
+      return;
+    }
+
+    setIsProcessingRefund(true);
+    try {
+      const orderRef = doc(dbFirestore, "orders", selectedRefundOrder.id);
+      const newOrderStatus = decision === "approved" ? "return_shipped" : "refund_rejected";
+      
+      const newRefundData = {
+        ...selectedRefundOrder.refundData,
+        adminDecision: decision,
+        adminNotes: refundAdminNotes
+      };
+
+      await updateDoc(orderRef, {
+        orderStatus: newOrderStatus,
+        refundData: newRefundData
+      });
+
+      setOrders(orders.map(o => o.id === selectedRefundOrder.id ? { ...o, orderStatus: newOrderStatus, refundData: newRefundData as any } : o));
+      toast.success(decision === "approved" ? "Refund disetujui, menunggu pembeli kirim retur." : "Refund ditolak.");
+      setIsRefundArbitrationModalOpen(false);
+    } catch (err: any) {
+      toast.error("Gagal memproses keputusan", { description: err.message });
+    } finally {
+      setIsProcessingRefund(false);
+    }
+  };
+
   // States for Active Carts
   // Using Record to represent dynamic cart items.
   const [carts, setCarts] = useState<any[]>([]);
@@ -98,11 +144,14 @@ export default function AdminDashboard() {
     const fetchProducts = async () => {
       setLoadingProducts(true);
       try {
-        const snapshot = await getDocs(collection(dbFirestore, "products"));
+        const snap = await get(dbRef(db, "products"));
         const fetchedProducts: RTDBProduct[] = [];
-        snapshot.forEach(doc => {
-          fetchedProducts.push({ id: doc.id, ...doc.data() } as RTDBProduct);
-        });
+        if (snap.exists()) {
+          const data = snap.val();
+          Object.keys(data).forEach((key) => {
+            fetchedProducts.push({ id: key, ...data[key] } as RTDBProduct);
+          });
+        }
         setProducts(fetchedProducts);
       } catch (err) {
         console.error(err);
@@ -138,6 +187,9 @@ export default function AdminDashboard() {
         
         setCarts(fetchedCarts);
         setLoadingCarts(false);
+      }, (error) => {
+        console.error("Gagal mengambil data keranjang:", error);
+        setLoadingCarts(false);
       });
       return () => unsubscribe();
     }
@@ -146,7 +198,7 @@ export default function AdminDashboard() {
   const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
       await updateDoc(doc(dbFirestore, "orders", orderId), { orderStatus: newStatus });
-      setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus as string } : o));
+      setOrders(orders.map(o => o.id === orderId ? { ...o, orderStatus: newStatus as string } : o));
       toast.success("Status pesanan berhasil diperbarui");
     } catch (err: unknown) {
       toast.error("Gagal memperbarui status", { description: (err as Error).message });
@@ -174,12 +226,15 @@ export default function AdminDashboard() {
         category: productCategory,
         description: productDesc,
         image: downloadUrl,
-        createdAt: serverTimestamp()
+        images: [downloadUrl],
+        sellerUid: currentUser?.uid || "",
+        createdAt: rtdbServerTimestamp()
       };
       
-      const docRef = await addDoc(collection(dbFirestore, "products"), newProduct);
+      const newRef = push(dbRef(db, "products"));
+      await set(newRef, newProduct);
       
-      setProducts([{ id: docRef.id, ...newProduct, createdAt: new Date() }, ...products]);
+      setProducts([{ id: newRef.key!, ...newProduct, createdAt: Date.now() } as unknown as RTDBProduct, ...products]);
       toast.success("Produk berhasil ditambahkan");
       
       setIsAddProductModalOpen(false);
@@ -270,6 +325,7 @@ export default function AdminDashboard() {
             <TabsList className="w-max min-w-full sm:min-w-0 bg-secondary/50 p-1 rounded-xl">
               <TabsTrigger value="orders" className="text-xs sm:text-sm px-4 sm:px-6 py-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all">Semua Pesanan</TabsTrigger>
               <TabsTrigger value="validation" className="text-xs sm:text-sm px-4 sm:px-6 py-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all">Validasi Pembayaran</TabsTrigger>
+              <TabsTrigger value="refunds" className="text-xs sm:text-sm px-4 sm:px-6 py-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all text-red-600 font-medium">Pengajuan Refund</TabsTrigger>
               <TabsTrigger value="products" className="text-xs sm:text-sm px-4 sm:px-6 py-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all">Produk</TabsTrigger>
               <TabsTrigger value="carts" className="text-xs sm:text-sm px-4 sm:px-6 py-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all">Keranjang Aktif</TabsTrigger>
               <TabsTrigger value="chat" className="text-xs sm:text-sm px-4 sm:px-6 py-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all">Live Chat</TabsTrigger>
@@ -428,6 +484,54 @@ export default function AdminDashboard() {
                                 <SelectItem value="refunded">Dikembalikan</SelectItem>
                               </SelectContent>
                             </Select>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* REFUNDS TAB */}
+          <TabsContent value="refunds">
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-border">
+                <h2 className="text-lg sm:text-xl font-bold text-foreground">Arbitrase Pengembalian Dana</h2>
+                <p className="text-sm text-muted-foreground mt-1">Tinjau dan ambil keputusan terkait komplain pembeli secara adil.</p>
+              </div>
+              
+              {loadingOrders ? (
+                <div className="flex justify-center p-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : orders.filter(o => o.orderStatus === "refund_requested").length === 0 ? (
+                <div className="text-center p-12">
+                  <ShieldAlert className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                  <p className="text-muted-foreground">Tidak ada kasus pengajuan refund saat ini.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order ID</TableHead>
+                        <TableHead>Alasan</TableHead>
+                        <TableHead>Tanggal Ajuan</TableHead>
+                        <TableHead>Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orders.filter(o => o.orderStatus === "refund_requested").map(order => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-mono text-xs">{order.id}</TableCell>
+                          <TableCell className="font-medium text-red-600">{order.refundData?.reason}</TableCell>
+                          <TableCell className="text-sm">{order.refundData?.requestedAt ? new Date(order.refundData.requestedAt).toLocaleString('id-ID') : "-"}</TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="destructive" onClick={() => openRefundArbitration(order)}>
+                              Tinjau Kasus
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -648,6 +752,113 @@ export default function AdminDashboard() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Refund Arbitration Modal */}
+      <Dialog open={isRefundArbitrationModalOpen} onOpenChange={setIsRefundArbitrationModalOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Arbitrase Pengajuan Refund</DialogTitle>
+            <DialogDescription>
+              Bandingkan foto asli produk dengan bukti yang diajukan pembeli.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedRefundOrder && selectedRefundOrder.refundData && (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Kolom Kiri: Data Pesanan & Original */}
+                <div className="space-y-4 md:border-r md:border-border md:pr-4">
+                  <h3 className="font-bold text-lg text-primary border-b border-border pb-2">Informasi Pembelian Asli</h3>
+                  <div className="bg-secondary/30 p-3 rounded-lg text-sm border border-border">
+                    <p><span className="font-semibold">Order ID:</span> {selectedRefundOrder.id}</p>
+                    <p><span className="font-semibold">Nilai Transaksi:</span> {formatPrice(selectedRefundOrder.totalAmount)}</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Barang yang dibeli:</p>
+                    {selectedRefundOrder.items.map((item: any, idx: number) => (
+                      <div key={idx} className="flex gap-3 items-center p-2 border border-border rounded-lg bg-background">
+                        <img src={item.image || (item.images && item.images[0])} alt="original" className="w-12 h-12 rounded object-cover border border-border" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium line-clamp-1">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.quantity}x @ {formatPrice(item.price)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Kolom Kanan: Bukti Pembeli */}
+                <div className="space-y-4 md:pl-2">
+                  <h3 className="font-bold text-lg text-red-600 border-b border-border pb-2">Bukti Klaim Pembeli</h3>
+                  
+                  <div className="bg-red-50 dark:bg-red-950/20 p-3 rounded-lg text-sm border border-red-100 dark:border-red-900/30">
+                    <p><span className="font-semibold text-red-800 dark:text-red-300">Alasan:</span> <span className="text-red-900 dark:text-red-200">{selectedRefundOrder.refundData.reason}</span></p>
+                    <p className="mt-2 text-red-900 dark:text-red-200 whitespace-pre-wrap">"{selectedRefundOrder.refundData.description}"</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Video Unboxing:</p>
+                    <div className="w-full max-h-[250px] bg-black rounded overflow-hidden">
+                      <video 
+                        src={selectedRefundOrder.refundData.videoUrl} 
+                        controls 
+                        className="w-full h-full object-contain"
+                      >
+                        Video Anda tidak mendukung playback.
+                      </video>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Foto Kecacatan:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedRefundOrder.refundData.evidenceImages?.map((url: string, idx: number) => (
+                        <a key={idx} href={url} target="_blank" rel="noreferrer">
+                          <img src={url} alt="bukti" className="w-24 h-24 rounded-lg object-cover border-2 border-red-200 dark:border-red-900 hover:border-red-500 transition-colors cursor-pointer" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-border">
+                <h3 className="font-bold text-lg mb-2">Keputusan Admin</h3>
+                <Textarea 
+                  value={refundAdminNotes}
+                  onChange={(e) => setRefundAdminNotes(e.target.value)}
+                  placeholder="Masukkan catatan admin (contoh: Bukti video tidak jelas, atau klaim disetujui harap kirim retur)..."
+                  className="mb-4 bg-background"
+                />
+                
+                <div className="flex flex-col sm:flex-row gap-3 justify-end">
+                  <Button 
+                    variant="outline" 
+                    className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/50"
+                    onClick={() => handleRefundDecision("rejected")}
+                    disabled={isProcessingRefund}
+                  >
+                    {isProcessingRefund ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : null}
+                    Tolak Klaim (Selesaikan Pesanan)
+                  </Button>
+                  
+                  <Button 
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => handleRefundDecision("approved")}
+                    disabled={isProcessingRefund}
+                  >
+                    {isProcessingRefund ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : null}
+                    Setujui Refund (Instruksikan Retur)
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -5,6 +5,7 @@ import Footer from "@/frontend/components/layout/Footer";
 import ProductCard from "@/frontend/components/layout/ProductCard";
 import { auth, db, dbFirestore } from "@/backend/config/firebase";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { ref, get, child } from "firebase/database";
 import { ShieldCheck, Truck, BadgeCheck, Star, Search, PackageX } from "lucide-react";
 import { Input } from "@/frontend/components/ui/input";
 import { Button } from "@/frontend/components/ui/button";
@@ -32,31 +33,22 @@ export default function Index() {
     const fetchProducts = async () => {
       setLoading(true);
       try {
-        const q = query(collection(dbFirestore, "products"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
+        const snapshot = await get(ref(db, "products"));
         const loadedProducts: any[] = [];
-        snapshot.forEach(doc => {
-          loadedProducts.push({ id: doc.id, ...doc.data() });
-        });
-        setProducts(loadedProducts);
-      } catch (error: unknown) {
-        if ((error as any)?.code === 'failed-precondition' || (error as Error)?.message?.includes("index")) {
-            try {
-                const snapshot = await getDocs(collection(dbFirestore, "products"));
-                const loadedProducts: any[] = [];
-                snapshot.forEach(doc => {
-                  loadedProducts.push({ id: doc.id, ...doc.data() });
-                });
-                loadedProducts.sort((a, b) => {
-                    const timeA = (a.createdAt as any)?.toDate ? (a.createdAt as any).toDate().getTime() : (a.createdAt as number || 0);
-                    const timeB = (b.createdAt as any)?.toDate ? (b.createdAt as any).toDate().getTime() : (b.createdAt as number || 0);
-                    return timeB - timeA;
-                });
-                setProducts(loadedProducts);
-            } catch(e) { console.error(e); }
-        } else {
-            console.error("Error fetching products:", error);
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          Object.keys(data).forEach((key) => {
+            loadedProducts.push({ id: key, ...data[key] });
+          });
+          loadedProducts.sort((a, b) => {
+            const timeA = a.createdAt || 0;
+            const timeB = b.createdAt || 0;
+            return timeB - timeA;
+          });
         }
+        setProducts(loadedProducts);
+      } catch (error) {
+        console.error("Error fetching products:", error);
       } finally {
         setLoading(false);
       }
@@ -170,7 +162,7 @@ export default function Index() {
           
           {/* CATEGORY FILTER */}
           <div className="flex flex-wrap items-center gap-2 mb-8">
-            {["Semua", "Baju", "Celana", "Sepatu", "Aksesoris"].map(cat => (
+            {["Semua", "Fashion", "Shoes", "Accessories"].map(cat => (
               <Button
                 key={cat}
                 variant={selectedCategory === cat ? "default" : "outline"}

@@ -37,6 +37,26 @@ service firebase.storage {
       allow update, delete: if false; // Bukti transfer tidak boleh dihapus atau diubah setelah diunggah
     }
 
+    // 3. CHAT MEDIA
+    match /chats/{chatId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() 
+                   && isImage() 
+                   && isUnderLimit(10);
+    }
+
+    // 4. USER PROFILE PICTURES
+    match /users/profile_pictures/{userId} {
+      allow read: if true;
+      allow write: if isAuthenticated() && request.auth.uid == userId && isImage() && isUnderLimit(10);
+    }
+
+    // 5. ADMIN PRODUCT IMAGES
+    match /product_images/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated() && isImage() && isUnderLimit(10);
+    }
+
     // Default Fallback
     match /{allPaths=**} {
       allow read, write: if false;

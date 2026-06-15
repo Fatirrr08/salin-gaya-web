@@ -27,15 +27,16 @@ import {
 import { toast } from "sonner";
 import { RTDBProduct } from "@/frontend/components/layout/ProductCard";
 import { formatPrice, getValidImageUrl } from "@/lib/utils";
-import { products as localProducts } from "@/backend/types";
 
 import { getChatRoomId, createOrOpenChatSession } from "@/backend/services/chatService";
+import { getUserData } from "@/backend/services/authService";
 
 interface Review {
   id: string;
   rating: number;
   comment: string;
   reviewerName: string;
+  reviewerPhotoURL?: string;
   createdAt: number;
 }
 
@@ -76,15 +77,8 @@ export default function ProductDetail() {
             }
           }
         } else {
-          // Cek fallback data lokal jika produk tidak ada di Firebase (untuk mock data ID 1-8)
-          // Gunakan String() untuk membandingkan agar kebal perbedaan tipe data (string vs number)
-          const localProduct = localProducts.find(
-            (p) => String(p.id) === String(id),
-          );
-          if (localProduct) {
-            setProduct(localProduct as unknown as RTDBProduct);
-            setSellerName(localProduct.seller || "Salin Gaya");
-          }
+          // No product found in Firebase
+          setProduct(null);
         }
       } catch (error) {
         console.error("FATAL ERROR FETCH PRODUCT:", error);
@@ -103,20 +97,54 @@ export default function ProductDetail() {
     fetchProduct();
 
     // Listen for reviews
-    const reviewsRef = dbRef(db, `reviews/${id}`);
-    const unsubscribe = onValue(reviewsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const loadedReviews: Review[] = Object.keys(data).map((key) => ({
-          id: key,
-          ...data[key],
-        }));
-        loadedReviews.sort((a, b) => b.createdAt - a.createdAt);
-        setReviews(loadedReviews);
-      } else {
-        setReviews([]);
-      }
-    });
+    let unsubscribe: () => void = () => {};
+
+    const fetchReviewsAndUsers = async () => {
+      const reviewsRef = dbRef(db, `reviews/${id}`);
+      unsubscribe = onValue(reviewsRef, async (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const loadedReviews: Review[] = Object.keys(data).map((key) => ({
+            id: key,
+            ...data[key],
+          }));
+
+          // Fetch all users to match photos for old reviews
+          try {
+            const usersRef = dbRef(db);
+            const usersSnapshot = await get(child(usersRef, `users`));
+            if (usersSnapshot.exists()) {
+              const usersData = usersSnapshot.val();
+              const usersList = Object.values(usersData) as any[];
+              
+              // Map by name
+              const photoMap: Record<string, string> = {};
+              usersList.forEach(u => {
+                if (u.name && u.photoURL) {
+                  photoMap[u.name] = u.photoURL;
+                }
+              });
+
+              // Patch missing photos
+              loadedReviews.forEach(r => {
+                if (!r.reviewerPhotoURL && photoMap[r.reviewerName]) {
+                  r.reviewerPhotoURL = photoMap[r.reviewerName];
+                }
+              });
+            }
+          } catch (e) {
+            console.error("Failed to fetch users for profile photos", e);
+          }
+
+          loadedReviews.sort((a, b) => b.createdAt - a.createdAt);
+          setReviews(loadedReviews);
+        } else {
+          setReviews([]);
+        }
+      });
+    };
+
+    fetchReviewsAndUsers();
 
     return () => {
       unsubscribe();
@@ -153,6 +181,7 @@ export default function ProductDetail() {
         rating: newRating,
         comment: newComment,
         reviewerName: currentUser.displayName || "Pengguna",
+        reviewerPhotoURL: currentUser.photoURL || null,
         createdAt: serverTimestamp(),
       });
 
@@ -342,6 +371,21 @@ export default function ProductDetail() {
                   const roomId = getChatRoomId(currentUser.uid, sellerId);
 
                   try {
+                    let finalSellerName = sellerName;
+                    let finalSellerPhoto = null;
+                    let finalSellerRole = "Penjual";
+
+                    try {
+                      const sellerData = await getUserData(sellerId);
+                      if (sellerData) {
+                        finalSellerName = sellerData.name || sellerName;
+                        finalSellerPhoto = sellerData.avatar || null;
+                        finalSellerRole = sellerData.role || "Penjual";
+                      }
+                    } catch (err) {
+                      console.error("Gagal mendapatkan data penjual:", err);
+                    }
+
                     await createOrOpenChatSession(
                       roomId,
                       currentUser.uid,
@@ -349,9 +393,9 @@ export default function ProductDetail() {
                       currentUser.photoURL || null,
                       role || "Pembeli",
                       sellerId,
-                      sellerName,
-                      null,
-                      "Penjual"
+                      finalSellerName,
+                      finalSellerPhoto,
+                      finalSellerRole
                     );
                     navigate(`/inbox/${roomId}`);
                   } catch (err) {
@@ -453,9 +497,17 @@ export default function ProductDetail() {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-secondary rounded-full flex items-center justify-center font-bold text-muted-foreground uppercase">
-                          {review.reviewerName.charAt(0)}
-                        </div>
+                        {review.reviewerPhotoURL ? (
+                          <img 
+                            src={review.reviewerPhotoURL} 
+                            alt={review.reviewerName}
+                            className="w-10 h-10 rounded-full object-cover border border-border"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-secondary rounded-full flex items-center justify-center font-bold text-muted-foreground uppercase shrink-0">
+                            {review.reviewerName.charAt(0)}
+                          </div>
+                        )}
                         <div>
                           <p className="font-bold text-sm text-foreground">
                             {review.reviewerName}

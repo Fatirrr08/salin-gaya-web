@@ -121,7 +121,7 @@ export default function CategoryPage() {
           );
 
     if (conditionFilter !== "all") {
-      items = items.filter((p) => p?.condition === conditionFilter);
+      items = items.filter((p) => p?.aiGrade === conditionFilter);
     }
 
     switch (sort) {

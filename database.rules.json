@@ -1,7 +1,8 @@
 {
   "rules": {
     "users": {
-      ".read": "auth != null",
+      ".read": true,
+      ".indexOn": ["phone", "email"],
       "$uid": {
         ".write": "auth != null && auth.uid == $uid"
       }
@@ -28,6 +29,10 @@
     "otp_sessions": {
       ".read": true,
       ".write": true
+    },
+    "reviews": {
+      ".read": true,
+      ".write": "auth != null"
     }
   }
 }

@@ -132,16 +132,8 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     setItems((prevItems) => {
       const existingItem = prevItems.find((item) => item.id === product.id);
       if (existingItem) {
-        if (existingItem.quantity >= 10) {
-          toast.warning("Maksimal kuantitas adalah 10 barang");
-          return prevItems;
-        }
-        toast.success("Kuantitas barang ditambahkan di keranjang!", { description: product.name });
-        return prevItems.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
-        );
+        toast.warning("Barang ini sudah ada di keranjang Anda!", { description: product.name });
+        return prevItems;
       }
       toast.success("Barang berhasil dimasukkan ke keranjang!", { description: product.name });
       return [...prevItems, { ...product, quantity: 1 }];

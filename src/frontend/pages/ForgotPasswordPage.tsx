@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { translateAuthError } from "@/lib/utils";
 import { ArrowLeft, Loader2, KeyRound } from "lucide-react";
+import emailjs from "@emailjs/browser";
 
 export default function ForgotPasswordPage() {
   const [input, setInput] = useState("");
@@ -49,21 +50,22 @@ export default function ForgotPasswordPage() {
   const isPhone = /^[0-9]+$/.test(input);
 
   const sendOTPViaProvider = async (phone: string, otpCode: string) => {
-    const actionText = "mereset password";
-    const messageTemplate = `*🔐 VERIFIKASI KEAMANAN SALIN GAYA 🔐*
+    const messageTemplate = `Halo Kak! 👋
 
-Halo,
-Berikut adalah kode OTP rahasia Anda untuk ${actionText} Salin Gaya:
+Kami menerima permintaan untuk melakukan *Pembaruan/Reset Password* pada akun Salin Gaya yang terhubung dengan nomor ini.
 
-*${otpCode}*
+Untuk melanjutkan proses pembaruan keamanan akun, silakan gunakan Kode OTP berikut:
+👉 *${otpCode}* 👈
 
-⚠️ *PERHATIAN:*
-Jangan pernah memberikan kode ini kepada siapa pun, *termasuk* pihak Salin Gaya. Demi keamanan, kode ini hanya berlaku selama 5 menit.
+🚨 *PANDUAN KEAMANAN:*
+1. Kode ini hanya berlaku selama *5 menit*.
+2. Jika Kakak *TIDAK* sedang mencoba mereset password, *JANGAN* berikan kode ini kepada siapapun! Akun Anda mungkin sedang dicoba diakses oleh pihak yang tidak bertanggung jawab.
+3. Pihak Salin Gaya *TIDAK AKAN PERNAH* meminta OTP Anda secara langsung.
 
-Jika Anda tidak merasa melakukan aktivitas ini, mohon abaikan pesan ini.
+Tetap waspada dan pastikan akun Kakak selalu aman.
 
 Terima kasih,
-*Tim Salin Gaya* 🛍️`;
+*Tim Keamanan Salin Gaya* 🛡️`;
 
     try {
       const response = await fetch("https://api.fonnte.com/send", {
@@ -72,7 +74,7 @@ Terima kasih,
           Authorization: import.meta.env.VITE_FONNTE_TOKEN,
         },
         body: new URLSearchParams({
-          target: String(phone),
+          target: String(phone).replace(/\+/g, ""),
           message: messageTemplate,
         }),
       });
@@ -110,7 +112,26 @@ Terima kasih,
           return;
         }
 
+        const usersRef = ref(db, "users");
+        const emailQuery = query(
+          usersRef,
+          orderByChild("email"),
+          equalTo(input),
+        );
+        const snapshot = await get(emailQuery);
+
+        if (!snapshot.exists()) {
+          toast.error("Email tidak ditemukan", {
+            description: "Email ini belum terdaftar di sistem.",
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        // Gunakan Firebase Auth native untuk mereset password via Email
         await sendPasswordResetEmail(auth, input);
+
+        toast.success("Tautan reset password terkirim!");
         setShowEmailSuccess(true);
       } else if (isPhone) {
         // Alur Nomor HP
@@ -181,14 +202,19 @@ Terima kasih,
 
     setIsLoading(true);
     try {
-      const formattedPhone = input.startsWith("0")
-        ? `+62${input.slice(1)}`
-        : input.startsWith("+")
-          ? input
-          : `+62${input}`;
-      const cleanPhone = formattedPhone.replace(/\+/g, "");
+      let cleanId = "";
+      if (input.includes("@")) {
+         cleanId = input.replace(/[\.\@]/g, "_");
+      } else {
+        const formattedPhone = input.startsWith("0")
+          ? `+62${input.slice(1)}`
+          : input.startsWith("+")
+            ? input
+            : `+62${input}`;
+        cleanId = formattedPhone.replace(/\+/g, "");
+      }
 
-      const otpRef = ref(db, `otp_sessions/${cleanPhone}`);
+      const otpRef = ref(db, `otp_sessions/${cleanId}`);
       const snapshot = await get(otpRef);
 
       if (!snapshot.exists()) {

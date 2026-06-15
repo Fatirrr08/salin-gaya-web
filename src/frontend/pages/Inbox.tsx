@@ -141,6 +141,9 @@ export default function Inbox() {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
 
+  // Lightbox feature state
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
   // Cache nama lawan bicara
   const [peerCache, setPeerCache] = useState<Record<string, { name: string; photo: string | null; role: string }>>({});
 
@@ -376,7 +379,7 @@ export default function Inbox() {
   };
 
   // ── Buat obrolan P2P baru ─────────────────────────────────────────
-  const handleStartP2PChat = async (peerId: string, peerName: string, peerRole: string) => {
+  const handleStartP2PChat = async (peerId: string, peerName: string, peerRole: string, peerPhotoURL?: string | null) => {
     if (!currentUser) return;
     try {
       setIsNewChatOpen(false);
@@ -386,11 +389,11 @@ export default function Inbox() {
         roomId,
         currentUser.uid,
         currentUser.displayName || "Pengguna",
-        currentUser.photoURL,
+        currentUser.photoURL || null,
         role || "Pembeli",
         peerId,
         peerName,
-        null,
+        peerPhotoURL || null,
         peerRole
       );
       
@@ -721,13 +724,19 @@ export default function Inbox() {
                               <>
                                 {/* Gambar Lampiran */}
                                 {msg.imageUrl && (
-                                  <div className="mb-1 rounded-md overflow-hidden bg-black/5 mt-1">
-                                    <img src={msg.imageUrl} alt="Lampiran" className="max-w-full h-auto object-cover rounded-md max-h-60" />
+                                  <div className="mb-1 rounded-md overflow-hidden bg-black/5 mt-1 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setPreviewImage(msg.imageUrl!)}>
+                                    <img src={msg.imageUrl} alt="Lampiran" className="max-w-full h-auto object-cover rounded-md max-h-60" loading="lazy" />
                                   </div>
                                 )}
-                                <p className="text-[14.5px] leading-relaxed whitespace-pre-wrap break-words pr-12 pb-1">
-                                  {msg.text}
-                                </p>
+                                {msg.text && (
+                                  <p className={`text-[14.5px] leading-relaxed whitespace-pre-wrap break-words pr-12 ${msg.imageUrl ? 'pb-2' : 'pb-1'}`}>
+                                    {msg.text}
+                                  </p>
+                                )}
+                                {!msg.text && msg.imageUrl && (
+                                  // Berikan ruang kosong di bawah gambar untuk centang dan waktu
+                                  <div className="h-4 w-12" />
+                                )}
                               </>
                             )}
                             
@@ -857,6 +866,24 @@ export default function Inbox() {
         onSelectUser={handleStartP2PChat}
         currentUserId={currentUser.uid}
       />
+      {/* Modal Preview Image (Lightbox) */}
+      {previewImage && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4" onClick={() => setPreviewImage(null)}>
+          <button 
+            className="absolute top-6 right-6 text-white hover:text-stone-300 transition-colors p-2"
+            onClick={(e) => { e.stopPropagation(); setPreviewImage(null); }}
+          >
+            <X className="w-8 h-8" />
+          </button>
+          <img 
+            src={previewImage} 
+            alt="Preview Fullscreen" 
+            className="max-w-full max-h-[90vh] object-contain rounded-md shadow-2xl"
+            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking the image itself
+          />
+        </div>
+      )}
+
     </div>
   );
 }
