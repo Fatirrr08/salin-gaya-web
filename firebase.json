@@ -81,7 +81,8 @@
     ]
   },
   "storage": {
-    "rules": "storage.rules"
+    "rules": "storage.rules",
+    "bucket": "salin-gaya.appspot.com"
   },
   "firestore": {
     "rules": "firestore.rules"

@@ -105,7 +105,7 @@ function Avatar({
       {photo ? (
         <img src={photo} alt={name} className="w-full h-full object-cover" />
       ) : (
-        <img src={`https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(name || "User")}&backgroundColor=f9f6f0`} alt={name} className="w-full h-full object-cover bg-[#F9F6F0]" />
+        <span>{getInitials(name)}</span>
       )}
     </div>
   );
@@ -355,20 +355,30 @@ export default function Inbox() {
     inputRef.current?.focus();
   };
 
-  const handleDeleteMessage = async (msgId: string) => {
-    if (!selectedRoomId) return;
+  const handleDeleteMessage = async (msg: Message) => {
+    if (!selectedRoomId || !msg.id) return;
     
+    // Validasi 5 menit
+    let createdAtMillis = 0;
+    if (msg.createdAt) {
+      createdAtMillis = (msg.createdAt as any).seconds ? (msg.createdAt as any).seconds * 1000 : (msg.createdAt as number);
+      if (Date.now() - createdAtMillis > 300000) {
+        toast.error("Waktu hapus (5 menit) sudah habis.");
+        return;
+      }
+    }
+
     // Konfirmasi sebelum menghapus
     if (!window.confirm("Menghapus pesan ini akan menghapusnya untuk semua orang di obrolan ini. Lanjutkan?")) {
       return;
     }
 
     try {
-      await deleteMessage(selectedRoomId, msgId);
+      await deleteMessage(selectedRoomId, msg.id, createdAtMillis);
       toast.success("Pesan ditarik");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error("Gagal menghapus pesan");
+      toast.error(err.message || "Gagal menghapus pesan");
     }
   };
 
@@ -713,9 +723,11 @@ export default function Inbox() {
                                 <button onClick={() => startEditing(msg)} className="text-[#A67B5B] hover:text-[#5C3A21] p-0.5 rounded-full hover:bg-stone-100 transition-colors" title="Edit Pesan">
                                   <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                                 </button>
-                                <button onClick={() => handleDeleteMessage(msg.id!)} className="text-red-500 hover:text-red-700 p-0.5 rounded-full hover:bg-red-50 transition-colors" title="Hapus Pesan">
-                                  <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                </button>
+                                {(!msg.createdAt || Date.now() - ((msg.createdAt as any).seconds ? (msg.createdAt as any).seconds * 1000 : (msg.createdAt as number)) <= 300000) && (
+                                  <button onClick={() => handleDeleteMessage(msg)} className="text-red-500 hover:text-red-700 p-0.5 rounded-full hover:bg-red-50 transition-colors" title="Hapus Pesan (Maks 5 menit)">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                  </button>
+                                )}
                               </div>
                             )}
                             

@@ -57,6 +57,18 @@ service firebase.storage {
       allow write: if isAuthenticated() && isImage() && isUnderLimit(10);
     }
 
+    // 6. REFUNDS
+    match /refunds/{orderId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isUnderLimit(50);
+    }
+
+    // 7. RECEIVE PROOFS
+    match /receive_proofs/{orderId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImage() && isUnderLimit(5);
+    }
+
     // Default Fallback
     match /{allPaths=**} {
       allow read, write: if false;

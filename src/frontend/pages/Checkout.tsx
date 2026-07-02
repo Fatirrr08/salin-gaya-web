@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   MapPin,
   Truck,
@@ -9,7 +9,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useCart, CartItem } from "@/frontend/contexts/CartContext";
+import { useCart } from "@/frontend/contexts/CartContext";
 import { useAuth } from "@/frontend/contexts/AuthContext";
 import { formatPrice, getValidImageUrl } from "@/lib/utils";
 import {
@@ -69,6 +69,7 @@ const PAYMENT_CATEGORIES = [
 ];
 const PLATFORM_FEE = 1000;
 const PAYMENT_FEE = 2000;
+const ADMIN_FEE = 5000;
 
 export default function Checkout() {
   const { clearCart, removeFromCart } = useCart();
@@ -93,6 +94,7 @@ export default function Checkout() {
   const [address, setAddress] = useState("");
   const [buyerCity, setBuyerCity] = useState("");
   const [buyerProvince, setBuyerProvince] = useState("");
+  const [buyerPostalCode, setBuyerPostalCode] = useState("");
   const [sellerAddresses, setSellerAddresses] = useState<Record<string, any>>(
     {},
   );
@@ -145,6 +147,7 @@ export default function Checkout() {
           setAddress(bAddress.street || "");
           setBuyerCity(bAddress.city || "");
           setBuyerProvince(bAddress.province || "");
+          setBuyerPostalCode(bAddress.postalCode || "");
           if (bAddress.lat && bAddress.lng) {
             setBuyerLat(bAddress.lat);
             setBuyerLng(bAddress.lng);
@@ -219,6 +222,11 @@ export default function Checkout() {
 
   // State for shipping and weights
   const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
+  const [shippingDetails, setShippingDetails] = useState<Record<string, any>>({});
+  
+  // Opsi Tambahan Pengiriman
+  const [useInsurance, setUseInsurance] = useState(false);
+  const [usePackingKayu, setUsePackingKayu] = useState(false);
 
   const { totalWeightKg, totalWeightGrams } = React.useMemo(() => {
     let grams = 0;
@@ -226,7 +234,7 @@ export default function Checkout() {
       const wGram = (item as any).weight ? Number((item as any).weight) : 1000;
       grams += wGram * (item.quantity || 1);
     });
-    return { totalWeightGrams: grams, totalWeightKg: Math.ceil(grams / 1000) };
+    return { totalWeightGrams: grams, totalWeightKg: Number((grams / 1000).toFixed(2)) };
   }, [items]);
 
   // Calculate Dynamic Shipping Cost
@@ -239,6 +247,7 @@ export default function Checkout() {
       Object.keys(sellerAddresses).length === 0 ||
       items.length === 0
     ) {
+      setShippingDetails({});
       return;
     }
 
@@ -258,6 +267,7 @@ export default function Checkout() {
         const distanceKm = getHaversineDistance(sLat, sLng, buyerLat, buyerLng);
         const sellerItems = itemsBySeller[sellerUid];
         let sellerWeightKg = 0;
+        let sellerItemPrice = 0;
 
         sellerItems.forEach((item) => {
           const wGram = (item as any).weight
@@ -269,14 +279,18 @@ export default function Checkout() {
           const w = (item as any).width ? Number((item as any).width) : 20;
           const h = (item as any).height ? Number((item as any).height) : 10;
 
-          const { billedWeight } = getBilledWeight(actualW, l, w, h);
+          const { billedWeight } = getBilledWeight(actualW, l, w, h, courier, usePackingKayu);
           sellerWeightKg += billedWeight * item.quantity;
+          sellerItemPrice += (item.price || 0) * item.quantity;
         });
 
         const shippingRes = calculateShipping(
           distanceKm,
           sellerWeightKg,
           courier,
+          usePackingKayu,
+          sellerItemPrice,
+          useInsurance
         );
         details[sellerUid] = {
           ...shippingRes,
@@ -285,6 +299,7 @@ export default function Checkout() {
         };
       });
 
+      setShippingDetails(details);
       setIsCalculatingShipping(false);
     }, 600);
 
@@ -297,18 +312,23 @@ export default function Checkout() {
     sellerAddresses,
     itemsBySeller,
     items.length,
+    useInsurance,
+    usePackingKayu,
   ]);
 
   const shippingCost = React.useMemo(() => {
-    const selectedCourier = COURIERS.find((c) => c.id === courier);
-    if (!selectedCourier || items.length === 0) return 0;
-    return totalWeightKg * selectedCourier.rate;
-  }, [courier, totalWeightKg, items.length]);
+    if (!courier || items.length === 0) return 0;
+    let total = 0;
+    Object.values(shippingDetails).forEach((detail: any) => {
+      total += detail.totalCost || 0;
+    });
+    return total;
+  }, [courier, shippingDetails, items.length]);
 
   const grandTotal =
     items.length === 0
       ? 0
-      : subtotal + shippingCost + (courier ? PLATFORM_FEE + PAYMENT_FEE : 0);
+      : subtotal + shippingCost + (courier ? PLATFORM_FEE + PAYMENT_FEE + ADMIN_FEE : 0);
 
   const handleCheckout = async () => {
     if (!currentUser) {
@@ -449,15 +469,20 @@ export default function Checkout() {
           new Set(items.map((item: any) => item.sellerUid || "admin")),
         ),
         trackingNumbers: {},
+        sellerConfirmations: Array.from(
+          new Set(items.map((item: any) => item.sellerUid || "admin")),
+        ).reduce((acc: any, uid) => ({ ...acc, [uid as string]: "pending" }), {}),
         shippingAddress: {
           street: address,
           city: buyerCity,
           province: buyerProvince,
+          postalCode: buyerPostalCode,
         },
         shippingMethod: courier,
         shippingCost: shippingCost,
         platformFee: PLATFORM_FEE,
         paymentFee: PAYMENT_FEE,
+        adminFee: ADMIN_FEE,
         totalWeight: totalWeightGrams,
         courier: courier,
         paymentMethod: paymentMethod,
@@ -526,7 +551,7 @@ export default function Checkout() {
                     disabled={isProcessing}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">
                       Kota Tujuan
@@ -549,6 +574,18 @@ export default function Checkout() {
                       placeholder="Provinsi..."
                       value={buyerProvince}
                       onChange={(e) => setBuyerProvince(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">
+                      Kode Pos
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-2.5 rounded-lg border border-border bg-background outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Kode Pos..."
+                      value={buyerPostalCode}
+                      onChange={(e) => setBuyerPostalCode(e.target.value)}
                     />
                   </div>
                 </div>
@@ -602,7 +639,7 @@ export default function Checkout() {
                 </div>
                 <div className="mt-3 pt-3 border-t border-border/50 flex justify-between">
                   <p className="text-sm font-bold text-foreground">
-                    Berat Ditagih (Pembulatan)
+                    Berat Ditagih
                   </p>
                   <p className="text-sm font-bold text-primary">
                     {totalWeightKg} Kg
@@ -658,6 +695,56 @@ export default function Checkout() {
                   </motion.label>
                 ))}
               </div>
+
+              {/* Opsi Pengiriman Tambahan */}
+              <AnimatePresence>
+                {courier && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-6 pt-5 border-t border-border overflow-hidden"
+                  >
+                    <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-primary" /> Opsi Pengiriman Tambahan
+                    </h3>
+                    <div className="space-y-3">
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <div className="relative flex items-center mt-0.5">
+                          <input 
+                            type="checkbox" 
+                            className="peer appearance-none w-4 h-4 border border-muted-foreground/30 rounded-sm checked:bg-primary checked:border-primary transition-all cursor-pointer" 
+                            checked={useInsurance} 
+                            onChange={(e) => setUseInsurance(e.target.checked)} 
+                            disabled={isProcessing}
+                          />
+                          <CheckCircle2 className="w-3 h-3 text-white absolute left-0.5 pointer-events-none opacity-0 peer-checked:opacity-100" strokeWidth={3} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Asuransi Pengiriman</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Lindungi paket dari risiko kehilangan/kerusakan. Biaya menyesuaikan harga barang & regulasi {courier}.</p>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <div className="relative flex items-center mt-0.5">
+                          <input 
+                            type="checkbox" 
+                            className="peer appearance-none w-4 h-4 border border-muted-foreground/30 rounded-sm checked:bg-primary checked:border-primary transition-all cursor-pointer" 
+                            checked={usePackingKayu} 
+                            onChange={(e) => setUsePackingKayu(e.target.checked)} 
+                            disabled={isProcessing}
+                          />
+                          <CheckCircle2 className="w-3 h-3 text-white absolute left-0.5 pointer-events-none opacity-0 peer-checked:opacity-100" strokeWidth={3} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Packing Kayu</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Wajib untuk barang rentan pecah. Menambah estimasi berat sesuai regulasi {courier}.</p>
+                        </div>
+                      </label>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </section>
 
             {/* Payment Method */}
@@ -678,7 +765,7 @@ export default function Checkout() {
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
                           key={method.id}
-                          className={`relative border rounded-xl px-4 py-2 cursor-pointer flex items-center justify-center text-center transition-all h-16 ${paymentMethod === method.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/50 bg-white"}`}
+                          className={`relative border rounded-xl px-4 py-2 cursor-pointer flex items-center justify-center text-center transition-all h-16 ${paymentMethod === method.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/50 bg-white"} ${method.id !== "QRIS" ? "opacity-50" : ""}`}
                         >
                           <input
                             type="radio"
@@ -686,8 +773,14 @@ export default function Checkout() {
                             value={method.id}
                             className="hidden"
                             checked={paymentMethod === method.id}
-                            onChange={() => setPaymentMethod(method.id)}
-                            disabled={isProcessing}
+                            onChange={() => {
+                              if (method.id !== "QRIS") {
+                                toast.info("Saat ini pembayaran hanya bisa via QRIS (Maintenance).");
+                              } else {
+                                setPaymentMethod(method.id);
+                              }
+                            }}
+                            disabled={isProcessing || method.id !== "QRIS"}
                           />
                           <div className="h-12 w-full flex items-center justify-center">
                             <img
@@ -817,6 +910,16 @@ export default function Checkout() {
                   <span className="font-medium text-foreground">
                     {courier && items.length > 0
                       ? formatPrice(PAYMENT_FEE)
+                      : "-"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Biaya Admin
+                  </span>
+                  <span className="font-medium text-foreground">
+                    {courier && items.length > 0
+                      ? formatPrice(ADMIN_FEE)
                       : "-"}
                   </span>
                 </div>

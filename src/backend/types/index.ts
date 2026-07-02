@@ -66,6 +66,7 @@ export interface OrderData {
   userId?: string;
   sellerUids?: string[];
   trackingNumbers?: Record<string, string>;
+  sellerConfirmations?: Record<string, "pending" | "accepted" | "rejected">;
   refundData?: {
     reason: string;
     description: string;
@@ -76,6 +77,16 @@ export interface OrderData {
     adminNotes?: string;
     returnResi?: string;
   };
+  hasReviewed?: boolean;
+}
+
+export interface PlatformReview {
+  id?: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: any;
 }
 
 export interface ChatMessage {

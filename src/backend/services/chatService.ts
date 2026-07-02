@@ -168,7 +168,13 @@ export async function editMessage(roomId: string, messageId: string, newText: st
 /**
  * Delete a message (Soft delete: hides content but keeps the bubble).
  */
-export async function deleteMessage(roomId: string, messageId: string): Promise<void> {
+export async function deleteMessage(roomId: string, messageId: string, createdAtMillis?: number): Promise<void> {
+  if (createdAtMillis) {
+    const timeDiff = Date.now() - createdAtMillis;
+    if (timeDiff > 300000) { // 5 minutes
+      throw new Error("Pesan ini sudah lebih dari 5 menit dan tidak dapat dihapus lagi.");
+    }
+  }
   const messageRef = doc(dbFirestore, "chats", roomId, "messages", messageId);
   await setDoc(messageRef, {
     isDeleted: true

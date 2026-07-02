@@ -4,13 +4,14 @@ import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
 import ProductCard from "@/frontend/components/layout/ProductCard";
 import { auth, db, dbFirestore } from "@/backend/config/firebase";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
-import { ref, get, child } from "firebase/database";
+import { ref, get } from "firebase/database";
+import { collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
 import { ShieldCheck, Truck, BadgeCheck, Star, Search, PackageX } from "lucide-react";
 import { Input } from "@/frontend/components/ui/input";
 import { Button } from "@/frontend/components/ui/button";
 import { motion } from "framer-motion";
 import { useAuth } from "@/frontend/contexts/AuthContext";
+import { PlatformReview } from "@/backend/types";
 
 const gridVariants = {
   hidden: { opacity: 0 },
@@ -28,6 +29,25 @@ export default function Index() {
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Semua");
+  const [platformReviews, setPlatformReviews] = useState<PlatformReview[]>([]);
+
+  React.useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const reviewsRef = collection(dbFirestore, "platformReviews");
+        const q = query(reviewsRef, where("rating", ">=", 4), orderBy("rating", "desc"), limit(3));
+        const querySnapshot = await getDocs(q);
+        const fetchedReviews: PlatformReview[] = [];
+        querySnapshot.forEach((doc) => {
+          fetchedReviews.push({ id: doc.id, ...doc.data() } as PlatformReview);
+        });
+        setPlatformReviews(fetchedReviews);
+      } catch (error) {
+        console.error("Error fetching platform reviews:", error);
+      }
+    };
+    fetchReviews();
+  }, []);
 
   React.useEffect(() => {
     const fetchProducts = async () => {
@@ -274,32 +294,60 @@ export default function Index() {
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
-            {[1, 2, 3].map((item, index) => (
-              <motion.div
-                key={item}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: index * 0.2 }}
-                className="bg-[#F3EFE9] p-6 rounded-2xl shadow-sm border border-[#EBE5D9] hover:shadow-md transition-shadow"
-              >
-                <div className="flex gap-1 mb-4">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      className="w-4 h-4 fill-[#D4A373] text-[#D4A373]"
-                    />
-                  ))}
-                </div>
-                <p className="text-sm text-foreground leading-relaxed mb-6 font-medium italic">
-                  "Barangnya original dan kondisinya sangat bagus! Pengiriman
-                  juga cepat. Puas banget belanja di Salin Gaya."
-                </p>
-                <p className="text-sm font-bold text-foreground">
-                  — Rina Susanti
-                </p>
-              </motion.div>
-            ))}
+            {platformReviews.length > 0 ? (
+              platformReviews.map((review, index) => (
+                <motion.div
+                  key={review.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: index * 0.2 }}
+                  className="bg-[#F3EFE9] p-6 rounded-2xl shadow-sm border border-[#EBE5D9] hover:shadow-md transition-shadow"
+                >
+                  <div className="flex gap-1 mb-4">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={star}
+                        className={`w-4 h-4 ${star <= review.rating ? "fill-[#D4A373] text-[#D4A373]" : "text-muted-foreground/30 fill-transparent"}`}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-sm text-foreground leading-relaxed mb-6 font-medium italic">
+                    "{review.comment}"
+                  </p>
+                  <p className="text-sm font-bold text-foreground">
+                    — {review.userName}
+                  </p>
+                </motion.div>
+              ))
+            ) : (
+              [1, 2, 3].map((item, index) => (
+                <motion.div
+                  key={item}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: index * 0.2 }}
+                  className="bg-[#F3EFE9] p-6 rounded-2xl shadow-sm border border-[#EBE5D9] hover:shadow-md transition-shadow"
+                >
+                  <div className="flex gap-1 mb-4">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={star}
+                        className="w-4 h-4 fill-[#D4A373] text-[#D4A373]"
+                      />
+                    ))}
+                  </div>
+                  <p className="text-sm text-foreground leading-relaxed mb-6 font-medium italic">
+                    "Barangnya original dan kondisinya sangat bagus! Pengiriman
+                    juga cepat. Puas banget belanja di Salin Gaya."
+                  </p>
+                  <p className="text-sm font-bold text-foreground">
+                    — Rina Susanti
+                  </p>
+                </motion.div>
+              ))
+            )}
           </div>
         </motion.section>
       </main>

@@ -10,8 +10,8 @@
     "products": {
       ".read": true,
       "$productId": {
-        // Hanya bisa membuat/mengubah produk jika sellerUid cocok dengan auth.uid
-        ".write": "auth != null && (!data.exists() || data.child('sellerUid').val() == auth.uid) && newData.child('sellerUid').val() == auth.uid"
+        // Hanya bisa membuat/mengubah produk jika sellerUid cocok dengan auth.uid. Memungkinkan penghapusan (!newData.exists())
+        ".write": "auth != null && (!data.exists() || data.child('sellerUid').val() == auth.uid) && (!newData.exists() || newData.child('sellerUid').val() == auth.uid)"
       }
     },
     "status": {
@@ -32,7 +32,11 @@
     },
     "reviews": {
       ".read": true,
-      ".write": "auth != null"
+      "$productId": {
+        "$reviewId": {
+          ".write": "auth != null && (!data.exists() || data.child('userId').val() == auth.uid) && (!newData.exists() || newData.child('userId').val() == auth.uid)"
+        }
+      }
     }
   }
 }

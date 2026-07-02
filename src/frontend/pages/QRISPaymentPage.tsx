@@ -3,8 +3,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
-import { db } from "@/backend/config/firebase";
-import { ref as dbRef, push, set, serverTimestamp } from "firebase/database";
+import { dbFirestore } from "@/backend/config/firebase";
+import { collection, addDoc, serverTimestamp as firestoreTimestamp } from "firebase/firestore";
 import { toast } from "sonner";
 import { useCart } from "@/frontend/contexts/CartContext";
 
@@ -23,7 +23,7 @@ export default function QRISPaymentPage() {
   useEffect(() => {
     if (!orderData) {
       toast.error("Data pesanan tidak ditemukan.");
-      navigate("/checkout");
+      navigate("/checkout", { replace: true });
       return;
     }
   }, [orderData, navigate]);
@@ -37,16 +37,13 @@ export default function QRISPaymentPage() {
 
     setIsProcessing(true);
     try {
-      const ordersRef = dbRef(db, "orders");
-      const newOrderRef = push(ordersRef);
-
       const finalOrderData = {
         ...orderData,
-
-        createdAt: serverTimestamp(),
+        paymentStatus: "paid", // Auto update to paid upon QRIS confirmation
+        createdAt: firestoreTimestamp(),
       };
 
-      await set(newOrderRef, finalOrderData);
+      await addDoc(collection(dbFirestore, "orders"), finalOrderData);
       clearCart();
 
       setShowConfirmModal(false);

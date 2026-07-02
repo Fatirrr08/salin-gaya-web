@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ref, get, child } from "firebase/database";
+import { ref, get } from "firebase/database";
 import { db } from "@/backend/config/firebase";
 import Navbar from "@/frontend/components/layout/Navbar";
 import { motion, AnimatePresence } from "framer-motion";

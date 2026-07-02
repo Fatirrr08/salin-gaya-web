@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   Loader2,
   Send,
+  Trash2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import Navbar from "@/frontend/components/layout/Navbar";
@@ -15,15 +16,7 @@ import Footer from "@/frontend/components/layout/Footer";
 import { useCart } from "@/frontend/contexts/CartContext";
 import { useAuth } from "@/frontend/contexts/AuthContext";
 import { db } from "@/backend/config/firebase";
-import {
-  ref as dbRef,
-  get,
-  child,
-  onValue,
-  push,
-  set,
-  serverTimestamp,
-} from "firebase/database";
+import { ref as dbRef, onValue, push, set, serverTimestamp, get, child, remove } from "firebase/database";
 import { toast } from "sonner";
 import { RTDBProduct } from "@/frontend/components/layout/ProductCard";
 import { formatPrice, getValidImageUrl } from "@/lib/utils";
@@ -37,6 +30,7 @@ interface Review {
   comment: string;
   reviewerName: string;
   reviewerPhotoURL?: string;
+  userId?: string;
   createdAt: number;
 }
 
@@ -179,6 +173,7 @@ export default function ProductDetail() {
         comment: newComment,
         reviewerName: currentUser.displayName || "Pengguna",
         reviewerPhotoURL: currentUser.photoURL || null,
+        userId: currentUser.uid,
         createdAt: serverTimestamp(),
       });
 
@@ -189,6 +184,17 @@ export default function ProductDetail() {
       toast.error("Gagal mengirim ulasan");
     } finally {
       setIsSubmittingReview(false);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus ulasan ini?")) return;
+    try {
+      const reviewRef = dbRef(db, `reviews/${id}/${reviewId}`);
+      await remove(reviewRef);
+      toast.success("Ulasan berhasil dihapus");
+    } catch (error) {
+      toast.error("Gagal menghapus ulasan");
     }
   };
 
@@ -519,13 +525,24 @@ export default function ProductDetail() {
                           </div>
                         </div>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {review.createdAt
-                          ? new Date(review.createdAt).toLocaleDateString(
-                              "id-ID",
-                            )
-                          : "Baru saja"}
-                      </span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {review.createdAt
+                            ? new Date(review.createdAt).toLocaleDateString(
+                                "id-ID",
+                              )
+                            : "Baru saja"}
+                        </span>
+                        {(currentUser?.uid === review.userId || currentUser?.uid === product?.sellerUid) && (
+                          <button
+                            onClick={() => handleDeleteReview(review.id!)}
+                            className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                            title="Hapus Ulasan"
+                          >
+                            <Trash2 className="w-3 h-3" /> Hapus
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <p className="text-sm text-foreground mt-3 leading-relaxed">
                       {review.comment}

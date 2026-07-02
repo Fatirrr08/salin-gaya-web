@@ -5,7 +5,7 @@ import { CartProvider } from "@/frontend/contexts/CartContext";
 import { Toaster as Sonner } from "@/frontend/components/ui/sonner";
 import { TooltipProvider } from "@/frontend/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 
 import ErrorBoundary from "@/frontend/components/ui/ErrorBoundary";
 import PageTransition from "@/frontend/components/layout/PageTransition";
@@ -17,7 +17,7 @@ import LoadingSpinner from "@/frontend/components/ui/LoadingSpinner";
 // ── Lazy with Retry ──────────────────────────────────────────────────────────
 // Resolves ChunkLoadError (White Screen of Death) by attempting a hard reload
 // ONCE if a chunk fails to fetch due to new deployments or network drops.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function lazyWithRetry(componentImport: () => Promise<any>) {
   return lazy(async () => {
     const pageHasAlreadyBeenForceRefreshed = JSON.parse(
@@ -39,7 +39,7 @@ function lazyWithRetry(componentImport: () => Promise<any>) {
           window.localStorage.setItem('page-has-been-force-refreshed', 'true');
           window.location.reload();
           // Return pending promise to prevent React from rendering ErrorBoundary during reload
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           return new Promise<{ default: React.ComponentType<any> }>(() => {});
         }
       }
@@ -60,6 +60,9 @@ const NotFound         = lazyWithRetry(() => import("@/frontend/pages/NotFound")
 const LoginPage          = lazyWithRetry(() => import("@/frontend/pages/LoginPage"));
 const RegisterPage       = lazyWithRetry(() => import("@/frontend/pages/RegisterPage"));
 const ForgotPasswordPage = lazyWithRetry(() => import("@/frontend/pages/ForgotPasswordPage"));
+const ResetPasswordPage  = lazyWithRetry(() => import("@/frontend/pages/ResetPasswordPage"));
+const TermsPage          = lazyWithRetry(() => import("@/frontend/pages/TermsPage"));
+const PrivacyPage        = lazyWithRetry(() => import("@/frontend/pages/PrivacyPage"));
 
 // User pages
 const ProfilePage      = lazyWithRetry(() => import("@/frontend/pages/ProfilePage"));
@@ -107,7 +110,19 @@ const queryClient = new QueryClient({
 // ─────────────────────────────────────────────────────────────────────────────
 function AnimatedRoutes() {
   const location = useLocation();
+  const navigate = useNavigate();
   useScrollToTop();
+
+  // Handle Firebase Auth Action URLs (like password reset sent to email)
+  React.useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const mode = searchParams.get('mode');
+    const oobCode = searchParams.get('oobCode');
+
+    if (mode === 'resetPassword' && oobCode) {
+      navigate(`/reset-password?oobCode=${oobCode}`);
+    }
+  }, [location, navigate]);
 
   return (
     // ONE stable ErrorBoundary that never resets on navigation
@@ -120,11 +135,14 @@ function AnimatedRoutes() {
           <Route path="/category/:slug" element={<CategoryPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/product/:id" element={<ProductDetail />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
 
           {/* ── Auth ── */}
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
           <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
+          <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
 
           {/* ── Buyer (Protected) ── */}
           <Route path="/cart" element={<ProtectedRoute><CartPage /></ProtectedRoute>} />

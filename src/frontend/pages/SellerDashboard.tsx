@@ -153,6 +153,21 @@ export default function SellerDashboard() {
     }
   };
 
+  const handleMarkAsSold = async (product: RTDBProduct) => {
+    if (!currentUser || product.sellerUid !== currentUser.uid) return;
+    if (!window.confirm(`Tandai ${product.name} sebagai terjual? Produk akan dihapus dari etalase (postingan) tapi foto tetap tersimpan untuk riwayat pesanan.`)) return;
+
+    try {
+      // Hanya hapus dari RTDB agar hilang dari etalase, jangan hapus foto dari storage
+      await remove(dbRef(db, `products/${product.id}`));
+      toast.success("Produk ditandai terjual dan dihapus dari postingan");
+      setProducts((prev) => prev.filter((p) => p.id !== product.id));
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal memperbarui status produk");
+    }
+  };
+
   const openEditModal = (product: RTDBProduct) => {
     setEditingProduct(product);
     setEditName(product.name);
@@ -198,8 +213,6 @@ export default function SellerDashboard() {
       
       await updateDoc(orderRef, {
         trackingNumbers: updatedTrackingNumbers,
-        // Jika penjual ini telah menginput resi, admin bisa melihatnya dan statusnya bisa dibiarkan atau diupdate.
-        // Di sini kita biarkan statusnya apa adanya (Admin yang mengatur).
       });
       
       setOrders(orders.map(o => o.id === selectedOrder.id ? { ...o, trackingNumbers: updatedTrackingNumbers } : o));
@@ -208,6 +221,43 @@ export default function SellerDashboard() {
     } catch (error) {
       console.error(error);
       toast.error("Gagal menyimpan nomor resi.");
+    }
+  };
+
+  const handleConfirmOrder = async (order: OrderData, status: "accepted" | "rejected") => {
+    if (!currentUser) return;
+    try {
+      const orderRef = doc(dbFirestore, "orders", order.id!);
+      const currentConfirmations = order.sellerConfirmations || {};
+      const updatedConfirmations = {
+        ...currentConfirmations,
+        [currentUser.uid]: status
+      };
+      
+      await updateDoc(orderRef, {
+        sellerConfirmations: updatedConfirmations,
+      });
+      
+      setOrders(orders.map(o => o.id === order.id ? { ...o, sellerConfirmations: updatedConfirmations } : o));
+      toast.success(`Pesanan berhasil ${status === "accepted" ? "diterima" : "ditolak"}!`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal memperbarui status pesanan.");
+    }
+  };
+
+  const handleReceiveReturn = async (order: OrderData) => {
+    if (!currentUser) return;
+    try {
+      const orderRef = doc(dbFirestore, "orders", order.id!);
+      await updateDoc(orderRef, {
+        orderStatus: "return_received",
+      });
+      setOrders(orders.map(o => o.id === order.id ? { ...o, orderStatus: "return_received" } : o));
+      toast.success("Konfirmasi terima paket retur berhasil!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal memperbarui status retur.");
     }
   };
 
@@ -325,7 +375,14 @@ export default function SellerDashboard() {
                         </span>
                       </td>
                       <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex justify-end gap-1">
+                          <button
+                            onClick={() => handleMarkAsSold(product)}
+                            className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
+                            title="Tandai Terjual & Sembunyikan"
+                          >
+                            <Package className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => openEditModal(product)}
                             className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
@@ -336,7 +393,7 @@ export default function SellerDashboard() {
                           <button
                             onClick={() => handleDelete(product)}
                             className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                            title="Hapus Produk"
+                            title="Hapus Produk Secara Permanen"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -382,6 +439,7 @@ export default function SellerDashboard() {
                         // Filter items that belong to this seller
                         const sellerItems = (order.items || []).filter(item => item.sellerUid === currentUser.uid);
                         const trackingNumber = order.trackingNumbers && order.trackingNumbers[currentUser.uid];
+                        const confirmationStatus = order.sellerConfirmations?.[currentUser.uid] || "pending";
                         
                         return (
                         <tr key={order.id} className="border-b border-border last:border-0 hover:bg-secondary/20 transition-colors">
@@ -408,22 +466,73 @@ export default function SellerDashboard() {
                             </div>
                           </td>
                           <td className="p-4">
-                            {trackingNumber ? (
+                            {confirmationStatus === "pending" && (
+                              <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded">Menunggu Konfirmasi</span>
+                            )}
+                            {confirmationStatus === "rejected" && (
+                              <span className="inline-block px-2 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded">Pesanan Ditolak</span>
+                            )}
+                            {confirmationStatus === "accepted" && trackingNumber && order.orderStatus !== "delivered" && !order.orderStatus?.startsWith("refund") && !order.orderStatus?.startsWith("return") && (
                               <div>
                                 <span className="inline-block px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded">Resi Tersimpan</span>
                                 <p className="text-xs font-mono mt-1">{trackingNumber}</p>
                               </div>
-                            ) : (
-                              <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded">Belum Input Resi</span>
+                            )}
+                            {confirmationStatus === "accepted" && trackingNumber && order.orderStatus === "delivered" && (
+                              <div>
+                                <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded">Pesanan Selesai</span>
+                                <p className="text-xs text-muted-foreground mt-1">Telah Diterima Pembeli</p>
+                              </div>
+                            )}
+                            {confirmationStatus === "accepted" && order.orderStatus === "refund_requested" && (
+                              <span className="inline-block px-2 py-1 bg-orange-100 text-orange-800 text-xs font-semibold rounded">Pembeli Ajukan Refund</span>
+                            )}
+                            {confirmationStatus === "accepted" && order.orderStatus === "return_shipped" && (
+                              <div>
+                                <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">Retur Dikirim Pembeli</span>
+                                <p className="text-xs text-muted-foreground mt-1">Menunggu paket sampai ke Anda</p>
+                              </div>
+                            )}
+                            {confirmationStatus === "accepted" && (order.orderStatus === "return_received" || order.orderStatus === "refund_bank_provided" || order.orderStatus === "refund_completed") && (
+                              <span className="inline-block px-2 py-1 bg-gray-100 text-gray-800 text-xs font-semibold rounded">Proses Retur Selesai</span>
+                            )}
+                            {confirmationStatus === "accepted" && !trackingNumber && !order.orderStatus?.startsWith("refund") && !order.orderStatus?.startsWith("return") && (
+                              <span className="inline-block px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded">Perlu Dikirim</span>
                             )}
                           </td>
                           <td className="p-4 text-right">
-                            <button
-                              onClick={() => handleOpenResiModal(order)}
-                              className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded hover:opacity-90 transition-opacity"
-                            >
-                              {trackingNumber ? "Edit Resi" : "Input Resi"}
-                            </button>
+                            {confirmationStatus === "pending" && (
+                              <div className="flex flex-col gap-2 items-end">
+                                <button
+                                  onClick={() => handleConfirmOrder(order, "accepted")}
+                                  className="w-full sm:w-auto px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded hover:opacity-90 transition-opacity"
+                                >
+                                  Terima
+                                </button>
+                                <button
+                                  onClick={() => handleConfirmOrder(order, "rejected")}
+                                  className="w-full sm:w-auto px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded border border-red-200 hover:bg-red-100 transition-colors"
+                                >
+                                  Tolak
+                                </button>
+                              </div>
+                            )}
+                            {confirmationStatus === "accepted" && (
+                              <button
+                                onClick={() => handleOpenResiModal(order)}
+                                className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded hover:opacity-90 transition-opacity"
+                              >
+                                {trackingNumber ? "Edit Resi" : "Input Resi"}
+                              </button>
+                            )}
+                            {confirmationStatus === "accepted" && order.orderStatus === "return_shipped" && (
+                              <button
+                                onClick={() => handleReceiveReturn(order)}
+                                className="px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors mt-2"
+                              >
+                                Terima Paket Retur
+                              </button>
+                            )}
                           </td>
                         </tr>
                       )})

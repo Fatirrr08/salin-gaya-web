@@ -4,7 +4,7 @@ import { useAuth } from "@/frontend/contexts/AuthContext";
 import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
 import { dbFirestore, storage, db } from "@/backend/config/firebase";
-import { collection, getDocs, orderBy, query, updateDoc, doc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, updateDoc, doc, onSnapshot } from "firebase/firestore";
 import { ref as dbRef, get, push, set, serverTimestamp as rtdbServerTimestamp } from "firebase/database";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
@@ -91,6 +91,18 @@ export default function AdminDashboard() {
       toast.error("Gagal memproses keputusan", { description: err.message });
     } finally {
       setIsProcessingRefund(false);
+    }
+  };
+
+  const handleTransferRefund = async (order: OrderData) => {
+    if (!window.confirm("Pastikan Anda telah mentransfer dana ke rekening pembeli. Lanjutkan?")) return;
+    try {
+      const orderRef = doc(dbFirestore, "orders", order.id);
+      await updateDoc(orderRef, { orderStatus: "refund_completed" });
+      setOrders(orders.map(o => o.id === order.id ? { ...o, orderStatus: "refund_completed" } : o));
+      toast.success("Refund berhasil diselesaikan!");
+    } catch (err: any) {
+      toast.error("Gagal menyelesaikan refund", { description: err.message });
     }
   };
 
@@ -506,7 +518,7 @@ export default function AdminDashboard() {
                 <div className="flex justify-center p-12">
                   <Loader2 className="w-8 h-8 animate-spin text-primary" />
                 </div>
-              ) : orders.filter(o => o.orderStatus === "refund_requested").length === 0 ? (
+              ) : orders.filter(o => o.orderStatus === "refund_requested" || o.orderStatus === "return_shipped" || o.orderStatus === "return_received" || o.orderStatus === "refund_bank_provided").length === 0 ? (
                 <div className="text-center p-12">
                   <ShieldAlert className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                   <p className="text-muted-foreground">Tidak ada kasus pengajuan refund saat ini.</p>
@@ -517,21 +529,40 @@ export default function AdminDashboard() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Order ID</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead>Alasan</TableHead>
                         <TableHead>Tanggal Ajuan</TableHead>
                         <TableHead>Aksi</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {orders.filter(o => o.orderStatus === "refund_requested").map(order => (
+                      {orders.filter(o => o.orderStatus === "refund_requested" || o.orderStatus === "return_shipped" || o.orderStatus === "return_received" || o.orderStatus === "refund_bank_provided").map(order => (
                         <TableRow key={order.id}>
                           <TableCell className="font-mono text-xs">{order.id}</TableCell>
+                          <TableCell>
+                            {order.orderStatus === "refund_requested" && <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-semibold rounded">Menunggu Tinjauan</span>}
+                            {order.orderStatus === "return_shipped" && <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">Retur Dikirim</span>}
+                            {order.orderStatus === "return_received" && <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">Retur Diterima Penjual</span>}
+                            {order.orderStatus === "refund_bank_provided" && <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">Rekening Siap</span>}
+                          </TableCell>
                           <TableCell className="font-medium text-red-600">{order.refundData?.reason}</TableCell>
                           <TableCell className="text-sm">{order.refundData?.requestedAt ? new Date(order.refundData.requestedAt).toLocaleString('id-ID') : "-"}</TableCell>
                           <TableCell>
-                            <Button size="sm" variant="destructive" onClick={() => openRefundArbitration(order)}>
-                              Tinjau Kasus
-                            </Button>
+                            {order.orderStatus === "refund_requested" && (
+                              <Button size="sm" variant="destructive" onClick={() => openRefundArbitration(order)}>
+                                Tinjau Kasus
+                              </Button>
+                            )}
+                            {(order.orderStatus === "return_shipped" || order.orderStatus === "return_received") && (
+                              <Button size="sm" variant="outline" disabled>
+                                Proses Retur
+                              </Button>
+                            )}
+                            {order.orderStatus === "refund_bank_provided" && (
+                              <Button size="sm" variant="default" className="bg-green-600 hover:bg-green-700" onClick={() => openRefundArbitration(order)}>
+                                Transfer Dana
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -577,10 +608,10 @@ export default function AdminDashboard() {
                         <TableRow key={product?.id}>
                           <TableCell>
                             <div className="w-10 h-10 rounded-md overflow-hidden bg-secondary">
-                              {product?.image ? (
-                                <img src={product.image} alt={product?.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                              {product?.image || (product?.images && product?.images[0]) ? (
+                                <img src={product?.image || product?.images[0]} alt={product?.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                               ) : (
-                                <ImageIcon className="w-5 h-5 m-auto text-muted-foreground" />
+                                <ImageIcon className="w-5 h-5 m-auto text-muted-foreground flex items-center justify-center h-full" />
                               )}
                             </div>
                           </TableCell>
@@ -835,27 +866,44 @@ export default function AdminDashboard() {
                   className="mb-4 bg-background"
                 />
                 
-                <div className="flex flex-col sm:flex-row gap-3 justify-end">
-                  <Button 
-                    variant="outline" 
-                    className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/50"
-                    onClick={() => handleRefundDecision("rejected")}
-                    disabled={isProcessingRefund}
-                  >
-                    {isProcessingRefund ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : null}
-                    Tolak Klaim (Selesaikan Pesanan)
-                  </Button>
-                  
-                  <Button 
-                    variant="default"
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                    onClick={() => handleRefundDecision("approved")}
-                    disabled={isProcessingRefund}
-                  >
-                    {isProcessingRefund ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : null}
-                    Setujui Refund (Instruksikan Retur)
-                  </Button>
-                </div>
+                {selectedRefundOrder.orderStatus === "refund_requested" ? (
+                  <div className="flex flex-col sm:flex-row gap-3 justify-end">
+                    <Button 
+                      variant="outline" 
+                      className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/50"
+                      onClick={() => handleRefundDecision("rejected")}
+                      disabled={isProcessingRefund}
+                    >
+                      {isProcessingRefund ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : null}
+                      Tolak Klaim (Selesaikan Pesanan)
+                    </Button>
+                    <Button 
+                      variant="default"
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => handleRefundDecision("approved")}
+                      disabled={isProcessingRefund}
+                    >
+                      {isProcessingRefund ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : null}
+                      Setujui Refund (Instruksikan Retur)
+                    </Button>
+                  </div>
+                ) : selectedRefundOrder.orderStatus === "refund_bank_provided" ? (
+                  <div className="mt-4">
+                    <div className="bg-green-50 border border-green-200 p-4 rounded-lg mb-4">
+                      <h4 className="font-bold text-green-900 mb-2">Informasi Rekening Pembeli</h4>
+                      <p className="text-sm text-green-800"><strong>Bank:</strong> {selectedRefundOrder.refundData.bankInfo?.bankName}</p>
+                      <p className="text-sm text-green-800"><strong>No. Rekening:</strong> {selectedRefundOrder.refundData.bankInfo?.accountNumber}</p>
+                      <p className="text-sm text-green-800"><strong>Atas Nama:</strong> {selectedRefundOrder.refundData.bankInfo?.accountHolder}</p>
+                      <p className="text-xs text-green-700 mt-2 italic">Total yang harus ditransfer: {formatPrice(selectedRefundOrder.totalAmount)}</p>
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <Button variant="outline" onClick={() => setIsRefundArbitrationModalOpen(false)}>Tutup</Button>
+                      <Button onClick={() => handleTransferRefund(selectedRefundOrder)} className="bg-green-600 hover:bg-green-700 text-white">
+                        Tandai Refund Selesai (Dana Ditransfer)
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}

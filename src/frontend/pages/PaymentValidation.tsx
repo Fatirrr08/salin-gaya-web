@@ -165,20 +165,16 @@ export default function PaymentValidation() {
 
       if (status === "paid") {
         updates.orderStatus = "processing";
-        // Kurangi stok barang
+        // Kurangi stok barang / Hapus dari etalase RTDB karena sudah terjual
         selectedOrder.items.forEach(async (item: OrderItem) => {
           if (item.id) {
             try {
-              const { getDoc } = await import("firebase/firestore");
-              const docRef = doc(dbFirestore, "products", item.id);
-              const snap = await getDoc(docRef);
-              if (snap.exists()) {
-                const currentStock = snap.data().stock || 0;
-                const newStock = Math.max(0, currentStock - (item.quantity || 1));
-                await updateDoc(docRef, { stock: newStock });
-              }
+              const { ref: dbRef, remove } = await import("firebase/database");
+              const { db } = await import("@/backend/config/firebase");
+              const productRef = dbRef(db, `products/${item.id}`);
+              await remove(productRef);
             } catch (err) {
-              console.error("Failed to update stock", err);
+              console.error("Failed to delete sold product from RTDB", err);
             }
           }
         });

@@ -4,10 +4,10 @@ import { useAuth } from "@/frontend/contexts/AuthContext";
 import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
 import { dbFirestore, storage } from "@/backend/config/firebase";
-import { collection, query, where, getDocs, orderBy, updateDoc, doc } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, updateDoc, doc, addDoc, serverTimestamp as firestoreTimestamp } from "firebase/firestore";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
-import { Loader2, Package, UploadCloud, Clock, CheckCircle2, AlertCircle, FileImage, Truck, Search } from "lucide-react";
+import { Loader2, Package, UploadCloud, Clock, CheckCircle2, AlertCircle, FileImage, Truck, Star } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 
 import { Card, CardContent } from "@/frontend/components/ui/card";
@@ -36,8 +36,28 @@ export default function OrderHistoryPage() {
   const [refundImages, setRefundImages] = useState<File[]>([]);
   const [refundTermsAccepted, setRefundTermsAccepted] = useState(false);
   const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
+  
+  // Review Modal State
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewOrder, setReviewOrder] = useState<OrderData | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const refundFileInputRef = useRef<HTMLInputElement>(null);
   const refundVideoInputRef = useRef<HTMLInputElement>(null);
+
+  const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
+  const [completeOrder, setCompleteOrder] = useState<OrderData | null>(null);
+  const [completeProofFile, setCompleteProofFile] = useState<File | null>(null);
+  const [isSubmittingComplete, setIsSubmittingComplete] = useState(false);
+
+  // Bank Info State (For Refund)
+  const [isBankModalOpen, setIsBankModalOpen] = useState(false);
+  const [bankOrder, setBankOrder] = useState<OrderData | null>(null);
+  const [bankName, setBankName] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [bankAccountHolder, setBankAccountHolder] = useState("");
+  const [isSubmittingBank, setIsSubmittingBank] = useState(false);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -214,6 +234,128 @@ export default function OrderHistoryPage() {
     }
   };
 
+  const openBankModal = (order: OrderData) => {
+    setBankOrder(order);
+    setBankName("");
+    setBankAccountNumber("");
+    setBankAccountHolder("");
+    setIsBankModalOpen(true);
+  };
+
+  const handleBankSubmit = async () => {
+    if (!bankOrder || !bankName || !bankAccountNumber || !bankAccountHolder) {
+      return toast.error("Harap isi semua informasi bank.");
+    }
+
+    setIsSubmittingBank(true);
+    try {
+      const orderRef = doc(dbFirestore, "orders", bankOrder.id);
+      
+      const updatedRefundData = {
+        ...bankOrder.refundData,
+        bankInfo: {
+          bankName,
+          accountNumber: bankAccountNumber,
+          accountHolder: bankAccountHolder
+        }
+      };
+
+      await updateDoc(orderRef, {
+        orderStatus: "refund_bank_provided",
+        refundData: updatedRefundData
+      });
+
+      setOrders(orders.map(o => o.id === bankOrder.id ? { ...o, orderStatus: "refund_bank_provided", refundData: updatedRefundData as any } : o));
+      toast.success("Informasi rekening berhasil dikirim!");
+      setIsBankModalOpen(false);
+    } catch (error: any) {
+      toast.error("Gagal mengirim informasi rekening", { description: error.message });
+    } finally {
+      setIsSubmittingBank(false);
+    }
+  };
+
+  const openCompleteModal = (order: OrderData) => {
+    setCompleteOrder(order);
+    setCompleteProofFile(null);
+    setIsCompleteModalOpen(true);
+  };
+
+  const handleCompleteSubmit = async () => {
+    if (!completeOrder) return;
+    if (!completeProofFile) return toast.error("Silakan unggah foto bukti penerimaan barang.");
+    
+    // Limit proof image size to 5MB
+    if (completeProofFile.size > 5 * 1024 * 1024) {
+      return toast.error("Ukuran foto maksimal 5 MB.");
+    }
+
+    setIsSubmittingComplete(true);
+    try {
+      const fileExt = completeProofFile.name.split('.').pop();
+      const fileName = `receive_proof_${completeOrder.id}_${Date.now()}.${fileExt}`;
+      const fileRef = storageRef(storage, `receive_proofs/${completeOrder.id}/${fileName}`);
+      const uploadTask = await uploadBytesResumable(fileRef, completeProofFile);
+      const downloadUrl = await getDownloadURL(uploadTask.ref);
+
+      const orderRef = doc(dbFirestore, "orders", completeOrder.id);
+      await updateDoc(orderRef, {
+        orderStatus: "delivered",
+        receiveProofUrl: downloadUrl
+      });
+      setOrders(orders.map(o => o.id === completeOrder.id ? { ...o, orderStatus: "delivered", receiveProofUrl: downloadUrl } : o));
+      toast.success("Pesanan berhasil diselesaikan!");
+      setIsCompleteModalOpen(false);
+    } catch (error: any) {
+      toast.error("Gagal menyelesaikan pesanan", { description: error.message });
+    } finally {
+      setIsSubmittingComplete(false);
+    }
+  };
+
+  const openReviewModal = (order: OrderData) => {
+    setReviewOrder(order);
+    setReviewRating(5);
+    setReviewComment("");
+    setIsReviewModalOpen(true);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!reviewOrder || !currentUser) return;
+    if (reviewRating < 1 || reviewRating > 5) {
+      toast.error("Silakan berikan rating 1-5 bintang.");
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      // 1. Simpan review ke collection platformReviews
+      await addDoc(collection(dbFirestore, "platformReviews"), {
+        userId: currentUser.uid,
+        userName: currentUser.displayName || "Pengguna Anonim",
+        rating: reviewRating,
+        comment: reviewComment,
+        orderId: reviewOrder.id,
+        createdAt: firestoreTimestamp()
+      });
+
+      // 2. Update order agar hasReviewed menjadi true
+      const orderRef = doc(dbFirestore, "orders", reviewOrder.id!);
+      await updateDoc(orderRef, {
+        hasReviewed: true
+      });
+
+      setOrders(orders.map(o => o.id === reviewOrder.id ? { ...o, hasReviewed: true } : o));
+      
+      toast.success("Terima kasih atas penilaian Anda!");
+      setIsReviewModalOpen(false);
+    } catch (error: any) {
+      toast.error("Gagal mengirim penilaian", { description: error.message });
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
   const formatDate = (timestamp: unknown) => {
     if (!timestamp) return "-";
     const date = (timestamp as any).toDate ? (timestamp as any).toDate() : new Date(timestamp as string);
@@ -226,18 +368,36 @@ export default function OrderHistoryPage() {
     });
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (order: OrderData) => {
+    const confirmations = Object.values(order.sellerConfirmations || {});
+    const hasRejected = confirmations.includes("rejected");
+    const hasPending = confirmations.includes("pending");
+
+    if (hasRejected) {
+      return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 flex items-center gap-1.5 w-fit"><AlertCircle className="w-3.5 h-3.5" /> Pesanan Ditolak Penjual</span>;
+    }
+
+    const status = order.orderStatus || order.paymentStatus || "pending";
+    
+    if (status === "paid" && hasPending) {
+      return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 flex items-center gap-1.5 w-fit"><Clock className="w-3.5 h-3.5" /> Menunggu Konfirmasi Penjual</span>;
+    }
+
     switch (status) {
       case "pending_verification":
         return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 flex items-center gap-1.5 w-fit"><Clock className="w-3.5 h-3.5" /> Menunggu Pembayaran</span>;
       case "payment_uploaded":
         return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 flex items-center gap-1.5 w-fit"><UploadCloud className="w-3.5 h-3.5" /> Menunggu Validasi</span>;
       case "paid":
-        return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 flex items-center gap-1.5 w-fit"><CheckCircle2 className="w-3.5 h-3.5" /> Lunas</span>;
+        return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 flex items-center gap-1.5 w-fit"><CheckCircle2 className="w-3.5 h-3.5" /> Lunas / Diproses</span>;
       case "refund_requested":
         return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 flex items-center gap-1.5 w-fit"><AlertCircle className="w-3.5 h-3.5" /> Pengajuan Refund</span>;
       case "return_shipped":
         return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 flex items-center gap-1.5 w-fit"><Truck className="w-3.5 h-3.5" /> Retur Dikirim</span>;
+      case "return_received":
+        return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 flex items-center gap-1.5 w-fit"><CheckCircle2 className="w-3.5 h-3.5" /> Retur Diterima Penjual</span>;
+      case "refund_bank_provided":
+        return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 flex items-center gap-1.5 w-fit"><Clock className="w-3.5 h-3.5" /> Menunggu Transfer Admin</span>;
       case "refund_completed":
         return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 flex items-center gap-1.5 w-fit"><CheckCircle2 className="w-3.5 h-3.5" /> Refund Selesai</span>;
       case "refund_rejected":
@@ -291,7 +451,7 @@ export default function OrderHistoryPage() {
                       <p className="font-semibold text-sm text-foreground">
                         {formatDate(order.createdAt)}
                       </p>
-                      {getStatusBadge(order.orderStatus || order.paymentStatus || "pending")}
+                      {getStatusBadge(order)}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       ID Pesanan:{" "}
@@ -314,6 +474,26 @@ export default function OrderHistoryPage() {
                     {(order.orderStatus === "shipped" || order.orderStatus === "delivered" || order.orderStatus === "processing" || order.orderStatus === "paid") && !order.refundData && (
                       <Button onClick={() => openRefundModal(order)} variant="destructive" className="gap-2">
                         <AlertCircle className="w-4 h-4" /> Ajukan Pengembalian
+                      </Button>
+                    )}
+                    {order.orderStatus === "shipped" && !order.refundData && (
+                      <Button onClick={() => openCompleteModal(order)} variant="default" className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+                        <CheckCircle2 className="w-4 h-4" /> Pesanan Diterima
+                      </Button>
+                    )}
+                    {order.orderStatus === "return_received" && (
+                      <Button onClick={() => openBankModal(order)} variant="default" className="gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+                        <UploadCloud className="w-4 h-4" /> Input Rekening
+                      </Button>
+                    )}
+                    {(order.orderStatus === "shipped" || order.orderStatus === "delivered" || order.orderStatus === "paid") && !order.hasReviewed && (
+                      <Button onClick={() => openReviewModal(order)} variant="default" className="gap-2 bg-amber-500 hover:bg-amber-600 text-white">
+                        <Star className="w-4 h-4" /> Beri Penilaian
+                      </Button>
+                    )}
+                    {order.hasReviewed && (
+                      <Button disabled variant="outline" className="gap-2 text-amber-600 border-amber-200 bg-amber-50/50">
+                        <CheckCircle2 className="w-4 h-4" /> Telah Dinilai
                       </Button>
                     )}
                     {order.orderStatus === "refund_requested" && (
@@ -614,6 +794,215 @@ export default function OrderHistoryPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Bank Info Modal */}
+      <Dialog open={isBankModalOpen} onOpenChange={setIsBankModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Informasi Rekening Pengembalian</DialogTitle>
+            <DialogDescription>
+              Masukkan detail rekening Anda agar admin dapat mentransfer dana pengembalian pesanan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Nama Bank</label>
+              <input 
+                type="text" 
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                placeholder="Contoh: BCA, Mandiri, BRI"
+                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Nomor Rekening</label>
+              <input 
+                type="text" 
+                value={bankAccountNumber}
+                onChange={(e) => setBankAccountNumber(e.target.value)}
+                placeholder="Contoh: 1234567890"
+                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Nama Pemilik Rekening</label>
+              <input 
+                type="text" 
+                value={bankAccountHolder}
+                onChange={(e) => setBankAccountHolder(e.target.value)}
+                placeholder="Sesuai buku tabungan"
+                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBankModalOpen(false)} disabled={isSubmittingBank}>
+              Batal
+            </Button>
+            <Button onClick={handleBankSubmit} disabled={isSubmittingBank || !bankName || !bankAccountNumber || !bankAccountHolder} className="bg-purple-600 hover:bg-purple-700 text-white">
+              {isSubmittingBank ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : null}
+              Kirim Info Rekening
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Review Modal */}
+      <Dialog open={isReviewModalOpen} onOpenChange={setIsReviewModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Star className="w-5 h-5 text-amber-500 fill-amber-500"/> Beri Penilaian</DialogTitle>
+            <DialogDescription>
+              Bagaimana pengalaman Anda berbelanja di Salin Gaya? Ulasan Anda akan sangat membantu kami dan pengguna lain!
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4 flex flex-col items-center">
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button 
+                  key={star} 
+                  onClick={() => setReviewRating(star)}
+                  className="transition-transform hover:scale-110 focus:outline-none"
+                >
+                  <Star 
+                    className={`w-10 h-10 ${star <= reviewRating ? "text-amber-500 fill-amber-500" : "text-muted-foreground/30 fill-transparent"}`} 
+                    strokeWidth={1.5}
+                  />
+                </button>
+              ))}
+            </div>
+
+            <div className="w-full space-y-2">
+              <label className="text-sm font-semibold text-left w-full block">Ulasan Anda</label>
+              <textarea 
+                rows={4}
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Barangnya original dan kondisinya sangat bagus..."
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-amber-500/20 outline-none text-sm bg-background"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsReviewModalOpen(false)}
+              disabled={isSubmittingReview}
+            >
+              Nanti Saja
+            </Button>
+            <Button
+              onClick={handleSubmitReview}
+              disabled={!reviewComment.trim() || isSubmittingReview}
+              className="bg-amber-500 hover:bg-amber-600 text-white min-w-[120px]"
+            >
+              {isSubmittingReview ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {isSubmittingReview ? "Mengirim..." : "Kirim Penilaian"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete Order Modal */}
+      <Dialog open={isCompleteModalOpen} onOpenChange={setIsCompleteModalOpen}>
+        <DialogContent className="max-w-md w-full mx-auto bg-card rounded-2xl overflow-hidden p-0 border border-border sm:max-w-lg">
+          <DialogHeader className="p-6 bg-green-500/10 border-b border-border text-center">
+            <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <DialogTitle className="text-xl font-bold text-foreground">Konfirmasi Pesanan Diterima</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground mt-2">
+              Mohon unggah foto bukti bahwa barang telah Anda terima dengan baik. Dana akan otomatis diteruskan ke penjual setelah ini.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground block">
+                Unggah Bukti Foto (Wajib)
+              </label>
+              <div className="mt-2 border-2 border-dashed border-border rounded-xl p-6 hover:bg-secondary/50 transition-colors flex flex-col items-center justify-center min-h-[150px] relative overflow-hidden group">
+                <input
+                  type="file"
+                  accept="image/jpeg, image/png, image/jpg"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setCompleteProofFile(e.target.files[0]);
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                
+                {completeProofFile ? (
+                  <div className="w-full text-center z-0 relative">
+                    <img 
+                      src={URL.createObjectURL(completeProofFile)} 
+                      alt="Preview Bukti" 
+                      className="max-h-40 mx-auto rounded-md mb-3 object-contain" 
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
+                      <p className="text-white text-sm font-medium flex items-center gap-2">
+                        <UploadCloud className="w-4 h-4" /> Ganti Foto
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center pointer-events-none">
+                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <FileImage className="w-6 h-6 text-primary" />
+                    </div>
+                    <p className="font-medium text-foreground text-sm mb-1">
+                      Klik atau Tarik Foto Kesini
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Format: JPG, PNG (Maks 5MB)
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg p-3 flex gap-3 text-amber-800 dark:text-amber-300">
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <p className="text-xs">
+                Pastikan Anda telah mengecek kondisi barang sebelum menekan tombol "Selesaikan Pesanan". Tindakan ini tidak dapat dibatalkan.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="p-6 bg-secondary/10 border-t border-border flex sm:justify-between gap-3 flex-col-reverse sm:flex-row">
+            <Button
+              variant="outline"
+              onClick={() => setIsCompleteModalOpen(false)}
+              disabled={isSubmittingComplete}
+              className="w-full sm:w-auto"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleCompleteSubmit}
+              disabled={isSubmittingComplete || !completeProofFile}
+              className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white gap-2"
+            >
+              {isSubmittingComplete ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Menyelesaikan...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  Selesaikan Pesanan
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Footer />
     </div>
   );

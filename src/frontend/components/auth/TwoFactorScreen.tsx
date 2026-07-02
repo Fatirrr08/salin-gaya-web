@@ -18,7 +18,7 @@ export default function TwoFactorScreen({
   onVerified,
 }: TwoFactorScreenProps) {
   const { logout } = useAuth();
-  const [otpCode, setOtpCode] = useState("");
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [isSending, setIsSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [sessionId, setSessionId] = useState("");
@@ -106,9 +106,29 @@ Terima kasih,
     return () => clearInterval(timer);
   }, [countdown]);
 
+  const handleChange = (index: number, value: string) => {
+    if (!/^[0-9]*$/.test(value)) return;
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+
+    if (value && index < 5) {
+      const nextInput = document.getElementById(`otp-2fa-${index + 1}`);
+      nextInput?.focus();
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      const prevInput = document.getElementById(`otp-2fa-${index - 1}`);
+      prevInput?.focus();
+    }
+  };
+
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otpCode.length !== 6) {
+    const enteredCode = otp.join("");
+    if (enteredCode.length !== 6) {
       toast.error("Format OTP tidak valid. Harus 6 digit angka.");
       return;
     }
@@ -130,7 +150,7 @@ Terima kasih,
         return;
       }
 
-      if (data.code !== otpCode) {
+      if (data.code !== enteredCode) {
         toast.error("Kode Keamanan salah. Akses ditolak.");
         setIsVerifying(false);
         return;
@@ -146,7 +166,7 @@ Terima kasih,
         description: translateAuthError(error),
       });
       setIsVerifying(false);
-      setOtpCode("");
+      setOtp(["", "", "", "", "", ""]);
     }
   };
 
@@ -173,21 +193,27 @@ Terima kasih,
         </div>
 
         <form onSubmit={handleVerify} className="space-y-6">
-          <div>
-            <input
-              type="text"
-              value={otpCode}
-              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="Masukkan 6 Digit OTP"
-              className="w-full text-center text-2xl tracking-[0.5em] font-mono px-4 py-4 rounded-xl border-2 border-border focus:border-primary focus:ring-0 outline-none transition-colors"
-              disabled={isVerifying || isSending}
-              required
-            />
+          <div className="flex justify-center gap-2">
+            {otp.map((digit, index) => (
+              <input
+                key={index}
+                id={`otp-2fa-${index}`}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleChange(index, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(index, e)}
+                className="w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl font-bold rounded-xl border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all"
+                disabled={isVerifying || isSending}
+                required={index === 0}
+              />
+            ))}
           </div>
 
           <button
             type="submit"
-            disabled={isVerifying || isSending || otpCode.length !== 6}
+            disabled={isVerifying || isSending || otp.join("").length !== 6}
             className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isVerifying ? (

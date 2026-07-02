@@ -43,39 +43,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setCurrentUser(user);
         initializePresence(user.uid);
         // Fetch role from RTDB
+        let unsubscribeDb: (() => void) | null = null;
+        
         try {
-          const dbRef = ref(db);
-          const snapshot = await get(child(dbRef, `users/${user.uid}`));
-          if (snapshot.exists()) {
-            const userData = snapshot.val();
-            const currentRole = userData.role || "Pembeli";
-            setRole(currentRole);
-            
-            if (currentRole === "Admin" || currentRole === "admin") {
-              import("firebase/firestore").then(({ doc, setDoc }) => {
-                setDoc(doc(dbFirestore, "chats", "admin_info"), {
-                  uid: user.uid,
-                  name: userData.name || "Admin",
-                  email: userData.email || "",
-                  participants: ["ALL"]
-                }, { merge: true }).catch(e => console.warn("Could not update admin data in firestore", e));
-              });
-            }
+          const userRef = ref(db, `users/${user.uid}`);
+          import("firebase/database").then(({ onValue }) => {
+            unsubscribeDb = onValue(userRef, (snapshot) => {
+              if (snapshot.exists()) {
+                const userData = snapshot.val();
+                const currentRole = userData.role || "Pembeli";
+                setRole(currentRole);
+                
+                if (currentRole === "Admin" || currentRole === "admin") {
+                  import("firebase/firestore").then(({ doc, setDoc }) => {
+                    setDoc(doc(dbFirestore, "chats", "admin_info"), {
+                      uid: user.uid,
+                      name: userData.name || "Admin",
+                      email: userData.email || "",
+                      participants: ["ALL"]
+                    }, { merge: true }).catch(e => console.warn("Could not update admin data in firestore", e));
+                  });
+                }
 
-            // Check 2FA
-            const is2FAEnabled = userData.twoFactorEnabled === true;
-            const isVerifiedInSession = sessionStorage.getItem(`2faVerified_${user.uid}`) === "true";
-            
-            if (is2FAEnabled && !isVerifiedInSession) {
-              setUserDataFor2FA({ phone: userData.phone, name: userData.name });
-              setRequires2FA(true);
-            }
-          } else {
-            // Default if not found in RTDB for some reason
-            setRole("Pembeli");
-          }
+                // Check 2FA
+                const is2FAEnabled = userData.twoFactorEnabled === true;
+                const isVerifiedInSession = sessionStorage.getItem(`2faVerified_${user.uid}`) === "true";
+                
+                if (is2FAEnabled && !isVerifiedInSession) {
+                  setUserDataFor2FA({ phone: userData.phone, name: userData.name });
+                  setRequires2FA(true);
+                }
+              } else {
+                // DO NOT default to Pembeli if they don't exist in DB yet.
+                // This allows the Role Selection Modal in RegisterPage to work!
+                setRole(null);
+              }
+            });
+          });
         } catch (error) {
-          setRole("Pembeli");
+          setRole(null);
         }
       } else {
         setCurrentUser(null);
@@ -89,6 +95,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       clearTimeout(timeoutId);
       unsubscribe();
+      if (unsubscribeDb) unsubscribeDb();
     };
   }, []);
 

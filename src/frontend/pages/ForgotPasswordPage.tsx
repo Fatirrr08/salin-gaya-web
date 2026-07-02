@@ -17,7 +17,6 @@ import {
 import { toast } from "sonner";
 import { translateAuthError } from "@/lib/utils";
 import { ArrowLeft, Loader2, KeyRound } from "lucide-react";
-import emailjs from "@emailjs/browser";
 
 export default function ForgotPasswordPage() {
   const [input, setInput] = useState("");
@@ -25,7 +24,7 @@ export default function ForgotPasswordPage() {
 
   // OTP States
   const [showOtpInput, setShowOtpInput] = useState(false);
-  const [otp, setOtp] = useState("");
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [countdown, setCountdown] = useState(0);
 
   // New Password States
@@ -74,7 +73,7 @@ Terima kasih,
           Authorization: import.meta.env.VITE_FONNTE_TOKEN,
         },
         body: new URLSearchParams({
-          target: String(phone).replace(/\+/g, ""),
+          target: String(phone).replace(/./g, ""),
           message: messageTemplate,
         }),
       });
@@ -105,30 +104,15 @@ Terima kasih,
     try {
       if (isEmail) {
         // Alur Email
-        const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+        const isEmailValid = /^[^.@]+@[^.@]+.[^.@]+$/.test(input);
         if (!isEmailValid) {
           toast.error("Format email tidak valid");
           setIsLoading(false);
           return;
         }
 
-        const usersRef = ref(db, "users");
-        const emailQuery = query(
-          usersRef,
-          orderByChild("email"),
-          equalTo(input),
-        );
-        const snapshot = await get(emailQuery);
-
-        if (!snapshot.exists()) {
-          toast.error("Email tidak ditemukan", {
-            description: "Email ini belum terdaftar di sistem.",
-          });
-          setIsLoading(false);
-          return;
-        }
-
-        // Gunakan Firebase Auth native untuk mereset password via Email
+        // Gunakan Firebase Auth native untuk mereset password via Email.
+        // Firebase Auth akan melempar error jika email tidak terdaftar.
         await sendPasswordResetEmail(auth, input);
 
         toast.success("Tautan reset password terkirim!");
@@ -164,7 +148,7 @@ Terima kasih,
         const expiresAt = new Date().getTime() + 5 * 60 * 1000;
 
         await set(
-          ref(db, `otp_sessions/${formattedPhone.replace(/\+/g, "")}`),
+          ref(db, `otp_sessions/${formattedPhone.replace(/./g, "")}`),
           {
             code: otpCode,
             expiresAt: expiresAt,
@@ -196,22 +180,42 @@ Terima kasih,
     }
   };
 
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^[0-9]*$/.test(value)) return;
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+
+    if (value && index < 5) {
+      const nextInput = document.getElementById(`otp-forgot-${index + 1}`);
+      nextInput?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      const prevInput = document.getElementById(`otp-forgot-${index - 1}`);
+      prevInput?.focus();
+    }
+  };
+
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp) return;
+    const otpValue = otp.join("");
+    if (otpValue.length !== 6) return;
 
     setIsLoading(true);
     try {
       let cleanId = "";
       if (input.includes("@")) {
-         cleanId = input.replace(/[\.\@]/g, "_");
+         cleanId = input.replace(/[..]/g, "_");
       } else {
         const formattedPhone = input.startsWith("0")
           ? `+62${input.slice(1)}`
           : input.startsWith("+")
             ? input
             : `+62${input}`;
-        cleanId = formattedPhone.replace(/\+/g, "");
+        cleanId = formattedPhone.replace(/./g, "");
       }
 
       const otpRef = ref(db, `otp_sessions/${cleanId}`);
@@ -228,7 +232,7 @@ Terima kasih,
       const sessionData = snapshot.val();
       const now = new Date().getTime();
 
-      if (sessionData.code !== otp || now > sessionData.expiresAt) {
+      if (sessionData.code !== otpValue || now > sessionData.expiresAt) {
         toast.error("Kode OTP salah atau kedaluwarsa.");
         setIsLoading(false);
         return;
@@ -377,7 +381,7 @@ Terima kasih,
                         type="button"
                         onClick={() => {
                           setShowOtpInput(false);
-                          setOtp("");
+                          setOtp(["", "", "", "", "", ""]);
                           setCountdown(0);
                         }}
                         disabled={isLoading}
@@ -386,25 +390,25 @@ Terima kasih,
                         Ubah
                       </button>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-foreground block mb-1.5">
-                        Kode OTP (6 Digit)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Masukkan 6 angka OTP"
-                        value={otp}
-                        onChange={(e) =>
-                          setOtp(e.target.value.replace(/\D/g, ""))
-                        }
-                        disabled={isLoading}
-                        maxLength={6}
-                        className="w-full px-4 py-3 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary outline-none text-xl tracking-[0.5em] text-center font-bold font-mono transition-all"
-                      />
+                    <div className="flex justify-center gap-2 mb-6 mt-4">
+                      {otp.map((digit, index) => (
+                        <input
+                          key={index}
+                          id={`otp-forgot-${index}`}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={digit}
+                          onChange={(e) => handleOtpChange(index, e.target.value)}
+                          onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                          disabled={isLoading}
+                          className="w-12 h-14 text-center text-xl font-bold rounded-xl border border-[#EBE5D9] focus:border-[#5C3A21] focus:ring-1 focus:ring-[#5C3A21] outline-none transition-all bg-[#F9F6F0]"
+                        />
+                      ))}
                     </div>
                     <button
                       type="submit"
-                      disabled={isLoading || otp.length !== 6}
+                      disabled={isLoading || otp.join("").length !== 6}
                       className="w-full py-2.5 bg-primary text-primary-foreground font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {isLoading ? (

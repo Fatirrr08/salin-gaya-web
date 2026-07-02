@@ -12,6 +12,7 @@ import {
   getDownloadURL,
 } from "firebase/storage";
 import { syncUserProfileToChats } from "@/backend/services/chatService";
+import { deleteAllUserData } from "@/backend/services/authService";
 import { toast } from "sonner";
 import {
   User,
@@ -29,6 +30,7 @@ import UpdatePasswordForm from "@/frontend/components/profile/UpdatePasswordForm
 import TwoFactorSettings from "@/frontend/components/profile/TwoFactorSettings";
 import ActiveSessions from "@/frontend/components/profile/ActiveSessions";
 import SecurityLogs from "@/frontend/components/profile/SecurityLogs";
+import MapModal from "@/frontend/components/ui/MapModal";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare } from "lucide-react";
 
@@ -51,6 +53,7 @@ export default function ProfilePage() {
   const [street, setStreet] = useState("");
   const [city, setCity] = useState("");
   const [province, setProvince] = useState("");
+  const [isMapOpen, setIsMapOpen] = useState(false);
 
   useEffect(() => {
     if (!currentUser) {
@@ -165,34 +168,43 @@ export default function ProfilePage() {
       setIsUpdating(false);
     }
   };
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const handleDeleteAccount = async () => {
+  const confirmDeleteAccount = async () => {
     if (!currentUser) return;
-
-    const confirmDelete = window.confirm(
-      "Apakah Anda yakin ingin MENGHAPUS AKUN ini secara permanen? Semua data Anda akan hilang dan tindakan ini tidak dapat dibatalkan.",
-    );
-
-    if (!confirmDelete) return;
 
     setIsDeleting(true);
     try {
-      await remove(dbRef(db, `users/${currentUser.uid}`));
+      // Hapus semua data dari Realtime Database secara menyeluruh (profil, produk, dll)
+      await deleteAllUserData(currentUser.uid);
+      
+      // Hapus pengguna dari Authentication
       await deleteUser(currentUser);
 
-      toast.success("Akun telah dihapus.");
+      toast.success("Akun telah dihapus secara permanen.");
+      setShowDeleteConfirm(false);
       navigate("/");
     } catch (error: unknown) {
       if ((error as any).code === "auth/requires-recent-login") {
-        toast.error("Gagal menghapus", {
-          description:
-            "Tindakan ini sensitif. Silakan keluar dan masuk kembali sebelum mencoba menghapus akun.",
+        // Jika gagal hapus Auth karena butuh login ulang, 
+        // tapi RTDB sudah terhapus, kita paksa logout saja agar mereka login ulang
+        // dan jika mereka login lagi, mereka akan dianggap sebagai pengguna baru.
+        toast.error("Sesi Kedaluwarsa", {
+          description: "Data profil telah dihapus. Silakan login kembali untuk membuat profil baru.",
         });
+        await auth.signOut();
+        navigate("/login");
       } else {
         toast.error("Gagal menghapus akun", { description: (error as Error).message });
       }
+    } finally {
       setIsDeleting(false);
+      setShowDeleteConfirm(false);
     }
+  };
+
+  const handleDeleteAccountClick = () => {
+    setShowDeleteConfirm(true);
   };
 
   if (!currentUser) return null;
@@ -219,7 +231,7 @@ export default function ProfilePage() {
           <div className="w-full md:w-64 shrink-0">
             <div className="bg-card border border-border rounded-xl shadow-sm p-4 sticky top-24">
               <div className="mb-6 px-2 flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-secondary overflow-hidden border border-border aspect-square">
+                <div className="w-12 h-12 shrink-0 rounded-full bg-secondary overflow-hidden border border-border aspect-square">
                   {previewImage || photoURL ? (
                     <img
                       src={previewImage || photoURL}
@@ -298,8 +310,8 @@ export default function ProfilePage() {
                   </h2>
 
                   <div className="flex flex-col sm:flex-row items-start gap-8 mb-8 pb-8 border-b border-border">
-                    <div className="relative">
-                      <div className="w-32 h-32 rounded-full bg-secondary flex items-center justify-center overflow-hidden border-4 border-background shadow-md aspect-square">
+                    <div className="relative shrink-0">
+                      <div className="w-32 h-32 shrink-0 rounded-full bg-secondary flex items-center justify-center overflow-hidden border-4 border-background shadow-md aspect-square">
                         {previewImage || photoURL ? (
                           <img
                             src={previewImage || photoURL}
@@ -425,11 +437,20 @@ export default function ProfilePage() {
                       Alamat Pengiriman
                     </h2>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-6">
-                    {role === "Penjual"
-                      ? "Alamat ini akan digunakan sebagai alamat Toko Anda (titik asal pengiriman)."
-                      : "Alamat ini akan digunakan sebagai alamat default tujuan pengiriman Anda."}
-                  </p>
+                  <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      {role === "Penjual"
+                        ? "Alamat ini akan digunakan sebagai alamat Toko Anda (titik asal pengiriman)."
+                        : "Alamat ini akan digunakan sebagai alamat default tujuan pengiriman Anda."}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsMapOpen(true)}
+                      className="px-4 py-2 bg-primary/10 text-primary font-medium text-sm rounded-lg flex items-center gap-2 hover:bg-primary/20 transition-colors shrink-0"
+                    >
+                      <MapPin className="w-4 h-4" /> Pilih Lokasi di Peta
+                    </button>
+                  </div>
 
                   <div className="space-y-5 max-w-lg">
                     <div className="space-y-2">
@@ -525,13 +546,10 @@ export default function ProfilePage() {
                       dikembalikan.
                     </p>
                     <button
-                      onClick={handleDeleteAccount}
+                      onClick={handleDeleteAccountClick}
                       disabled={isDeleting}
                       className="bg-red-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
-                      {isDeleting ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : null}
                       Hapus Akun Permanen
                     </button>
                   </div>
@@ -542,7 +560,53 @@ export default function ProfilePage() {
         </div>
       </main>
 
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-card w-full max-w-md rounded-2xl p-6 shadow-xl border border-red-200 dark:border-red-900"
+          >
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-500 mb-4">
+              <Trash2 className="w-8 h-8" />
+              <h3 className="text-xl font-bold">Hapus Akun Permanen?</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Ini adalah langkah terakhir. Jika Anda melanjutkan, seluruh data produk, riwayat pesanan, dan profil Anda akan <strong>dihapus selamanya</strong> dan tidak dapat dikembalikan.
+            </p>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 bg-secondary text-secondary-foreground font-medium rounded-lg hover:bg-secondary/80 transition-colors disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmDeleteAccount}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Ya, Hapus Sekarang"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       <Footer />
+      
+      <MapModal
+        isOpen={isMapOpen}
+        onClose={() => setIsMapOpen(false)}
+        onSelectLocation={(addr, cityParam, provParam, lat, lng) => {
+          setStreet(addr || "");
+          setCity(cityParam || "");
+          setProvince(provParam || "");
+        }}
+      />
     </div>
   );
 }

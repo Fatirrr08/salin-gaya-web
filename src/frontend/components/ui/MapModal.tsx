@@ -12,15 +12,19 @@ import { X, MapPin, Loader2, Search, Navigation } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
-// Fix Leaflet's default icon issue in React
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-  iconUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+// Custom Pin Icon yang cantik untuk Leaflet
+const customPinIcon = L.divIcon({
+  className: "custom-leaflet-marker",
+  html: `
+    <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; transform: translateY(-50%);">
+      <svg viewBox="0 0 24 24" fill="#A67B5B" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 100%; height: 100%; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.3));">
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+        <circle cx="12" cy="10" r="3" fill="white"/>
+      </svg>
+    </div>
+  `,
+  iconSize: [40, 40],
+  iconAnchor: [20, 40], // Titik jangkar ada di bagian paling bawah tengah pin
 });
 
 interface MapModalProps {
@@ -259,10 +263,12 @@ export default function MapModal({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="w-full max-w-2xl bg-card rounded-2xl shadow-2xl overflow-visible flex flex-col max-h-[90vh]"
           >
-            <div className="p-4 border-b border-border flex justify-between items-center bg-secondary/50 rounded-t-2xl shrink-0">
-              <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-primary" /> Pilih Lokasi
-                Pengiriman
+            <div className="p-5 border-b border-border/50 flex justify-between items-center bg-white rounded-t-2xl shrink-0 z-50">
+              <h2 className="font-bold text-foreground text-lg flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <MapPin className="w-4 h-4 text-primary" />
+                </div>
+                Pilih Lokasi Pengiriman
               </h2>
               <button
                 onClick={onClose}
@@ -272,10 +278,10 @@ export default function MapModal({
               </button>
             </div>
 
-            <div className="p-4 border-b border-border bg-secondary/30 relative shrink-0 z-50">
-              <div className="flex gap-2">
+            <div className="px-5 pt-4 pb-2 bg-white relative shrink-0 z-50">
+              <div className="flex gap-3">
                 <div className="relative flex-1" ref={searchRef}>
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
                     type="text"
                     placeholder="Cari jalan, kecamatan, atau kota..."
@@ -284,7 +290,7 @@ export default function MapModal({
                     onFocus={() => {
                       if (searchResults.length > 0) setShowDropdown(true);
                     }}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary outline-none text-sm shadow-sm transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-muted/30 focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none text-sm transition-all"
                   />
                   {isSearching && (
                     <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />
@@ -319,7 +325,7 @@ export default function MapModal({
                 <button
                   onClick={handleCurrentLocation}
                   disabled={isLocating}
-                  className="px-4 py-2 bg-background border border-border rounded-lg text-foreground shadow-sm hover:bg-secondary transition-colors flex items-center justify-center shrink-0 disabled:opacity-50"
+                  className="w-11 h-11 bg-white border border-border rounded-xl text-foreground hover:bg-secondary hover:border-border transition-all flex items-center justify-center shrink-0 disabled:opacity-50 group"
                   title="Gunakan Lokasi Saat Ini"
                 >
                   {isLocating ? (
@@ -332,12 +338,13 @@ export default function MapModal({
             </div>
 
             {/* Kontainer Peta dengan Tinggi Absolut yang Tegas */}
-            <div className="relative flex-1 min-h-[350px] max-h-[500px] w-full bg-muted z-0">
-              <MapContainer
-                center={position}
-                zoom={16}
-                scrollWheelZoom={true}
-                className="h-full w-full absolute inset-0"
+            <div className="relative flex flex-col flex-1 min-h-[350px] max-h-[450px] w-full z-0 px-5 pb-2 pt-2 bg-white">
+              <div className="relative flex-1 w-full rounded-xl overflow-hidden shadow-inner border border-border">
+                <MapContainer
+                  center={position}
+                  zoom={16}
+                  scrollWheelZoom={true}
+                  className="h-full w-full absolute inset-0 z-10"
                 maxBounds={[
                   [-11.0, 95.0],
                   [6.0, 141.0],
@@ -372,46 +379,51 @@ export default function MapModal({
                   eventHandlers={eventHandlers}
                   position={position}
                   ref={markerRef}
+                  icon={customPinIcon}
                 />
-                <MapEvents />
-              </MapContainer>
+                  <MapEvents />
+                </MapContainer>
+              </div>
             </div>
 
-            <div className="p-4 md:p-5 border-t border-border bg-card rounded-b-2xl shrink-0">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            <div className="p-5 border-t border-border/50 bg-white rounded-b-2xl shrink-0">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
                 Alamat Terpilih
               </p>
-              <div className="bg-secondary/30 border border-border p-3 rounded-lg min-h-[60px] flex items-center">
+              <div className="bg-[#A67B5B]/5 border border-[#A67B5B]/20 p-3.5 rounded-xl min-h-[68px] flex items-start gap-3 transition-all">
                 {isLoading ? (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Menganalisa
-                    koordinat GPS...
+                  <div className="flex items-center gap-2 text-muted-foreground w-full h-full justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-[#A67B5B]" /> <span className="text-sm font-medium">Menganalisa koordinat GPS...</span>
                   </div>
                 ) : addressData ? (
-                  <div>
-                    <p className="text-sm font-medium text-foreground line-clamp-2">
-                      {addressData.address}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                      <span className="text-[11px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">
-                        {addressData.city || "Kota Tidak Diketahui"}
-                      </span>
-                      <span className="text-[11px] bg-secondary text-secondary-foreground font-bold px-2 py-0.5 rounded-full">
-                        {addressData.province || "Provinsi Tidak Diketahui"}
-                      </span>
+                  <>
+                    <MapPin className="w-5 h-5 text-[#A67B5B] shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground line-clamp-2 leading-snug">
+                        {addressData.address}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                        <span className="text-[10px] bg-white border border-[#A67B5B]/20 text-[#A67B5B] font-bold px-2 py-0.5 rounded-md shadow-sm">
+                          {addressData.city || "Kota Tidak Diketahui"}
+                        </span>
+                        <span className="text-[10px] bg-white border border-[#A67B5B]/20 text-[#A67B5B] font-bold px-2 py-0.5 rounded-md shadow-sm">
+                          {addressData.province || "Provinsi Tidak Diketahui"}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Geser pin peta untuk memilih alamat secara otomatis.
-                  </p>
+                  <div className="flex items-center gap-2 text-muted-foreground w-full h-full justify-center">
+                    <MapPin className="w-5 h-5 opacity-50" />
+                    <p className="text-sm font-medium">Geser pin peta untuk memilih alamat secara otomatis.</p>
+                  </div>
                 )}
               </div>
 
-              <div className="flex gap-3 mt-4 md:mt-5">
+              <div className="flex gap-3 mt-5">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2.5 border border-border text-foreground text-sm font-medium rounded-lg hover:bg-secondary transition-colors"
+                  className="px-5 py-2.5 bg-white border border-border text-foreground text-sm font-semibold rounded-xl hover:bg-secondary transition-all"
                 >
                   Batal
                 </button>
@@ -431,7 +443,7 @@ export default function MapModal({
                     }
                   }}
                   disabled={isLoading || !addressData}
-                  className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-bold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="flex-1 px-5 py-2.5 bg-[#A67B5B] hover:bg-[#8e684d] text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:hover:shadow-none disabled:hover:bg-[#A67B5B] flex items-center justify-center gap-2"
                 >
                   Gunakan Lokasi Ini
                 </button>

@@ -3,6 +3,7 @@ export interface ShippingResult {
   distanceMultiplier: number;
   distanceCost: number;
   totalCost: number;
+  insuranceCost: number;
   estimatedDays: string;
 }
 
@@ -22,23 +23,36 @@ export function getHaversineDistance(lat1: number, lon1: number, lat2: number, l
   return Number(distance.toFixed(2));
 }
 
-export function applyCourierRounding(weight: number): number {
-  const integerPart = Math.floor(weight);
-  const fractionalPart = weight - integerPart;
-  if (fractionalPart > 0.3) {
-    return integerPart + 1;
-  }
-  return integerPart || 1; // min 1kg
+export function applyCourierRounding(weight: number, courier: string): number {
+  // Sesuai permintaan pengguna: jangan dibulatkan dan jangan digenapkan ke 1 kg
+  return weight;
 }
 
 /**
  * Kalkulasi Billed Weight: Aktual (Kg) vs Volumetrik
  * Rumus Volumetrik Udara Darat umum: (P x L x T) / 6000
  */
-export function getBilledWeight(actualWeightKg: number, lengthCm: number, widthCm: number, heightCm: number) {
-  const volumetricWeight = (lengthCm * widthCm * heightCm) / 6000;
-  const maxWeight = Math.max(actualWeightKg, volumetricWeight);
-  const billedWeight = Math.max(1, applyCourierRounding(maxWeight));
+export function getBilledWeight(actualWeightKg: number, lengthCm: number, widthCm: number, heightCm: number, courier: string = "", usePackingKayu: boolean = false) {
+  let l = lengthCm;
+  let w = widthCm;
+  let h = heightCm;
+  
+  if (usePackingKayu && courier === "SiCepat") {
+    // SiCepat menambahkan dimensi 5 cm di setiap sisi
+    l += 5;
+    w += 5;
+    h += 5;
+  }
+
+  const volumetricWeight = (l * w * h) / 6000;
+  let maxWeight = Math.max(actualWeightKg, volumetricWeight);
+
+  if (usePackingKayu && courier === "J&T") {
+    // J&T menambah 30% dari berat asli/volumetrik
+    maxWeight = maxWeight * 1.3;
+  }
+
+  const billedWeight = applyCourierRounding(maxWeight, courier);
   
   return { 
     billedWeight, 
@@ -47,11 +61,22 @@ export function getBilledWeight(actualWeightKg: number, lengthCm: number, widthC
   };
 }
 
+export function calculateInsurance(itemPrice: number, courier: string): number {
+  if (courier === "JNE") {
+    return (0.002 * itemPrice) + 5000;
+  } else if (courier === "J&T") {
+    return 0.002 * itemPrice;
+  } else if (courier === "SiCepat") {
+    return 0.005 * itemPrice;
+  }
+  return 0;
+}
+
 /**
  * Engine Kalkulator Harga Ekspedisi Dinamis Berjenjang
  */
-export function calculateShipping(distanceKm: number, weightKg: number, courier: string): ShippingResult {
-  const billedWeight = Math.max(1, weightKg); // Pastikan berat minimal 1kg
+export function calculateShipping(distanceKm: number, weightKg: number, courier: string, usePackingKayu: boolean = false, itemPrice: number = 0, useInsurance: boolean = false): ShippingResult {
+  const billedWeight = weightKg; // Tanpa pembulatan atau minimal berat 1kg
   
   let baseRate = 0;
   let multiplierPerKm = 0;
@@ -92,13 +117,26 @@ export function calculateShipping(distanceKm: number, weightKg: number, courier:
   // Cost calculation
   const distanceCost = Math.round(distanceKm * multiplierPerKm);
   const costPerKg = baseRate + distanceCost;
-  const totalCost = costPerKg * billedWeight;
+  let totalCost = costPerKg * billedWeight;
+
+  // JNE Packing Kayu = Ongkir * 2
+  if (usePackingKayu && courier === "JNE") {
+    totalCost = totalCost * 2;
+  }
+
+  let insuranceCost = 0;
+  if (useInsurance) {
+    insuranceCost = calculateInsurance(itemPrice, courier);
+  }
+
+  totalCost += insuranceCost;
 
   return {
     baseRate,
     distanceMultiplier: multiplierPerKm,
     distanceCost,
     totalCost,
-    estimatedDays
+    insuranceCost,
+    estimatedDays,
   };
 }

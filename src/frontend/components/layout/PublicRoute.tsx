@@ -4,7 +4,7 @@ import { useAuth } from '@/frontend/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 export default function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, role, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -15,7 +15,7 @@ export default function PublicRoute({ children }: { children: React.ReactNode })
     );
   }
 
-  if (currentUser) {
+  if (currentUser && role !== null) {
     return <Navigate to="/" replace state={{ from: location }} />;
   }
 

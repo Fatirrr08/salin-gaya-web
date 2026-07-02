@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ref, get, child } from "firebase/database";
+import { ref, get } from "firebase/database";
 import { db } from "@/backend/config/firebase";
 import {
   CommandDialog,

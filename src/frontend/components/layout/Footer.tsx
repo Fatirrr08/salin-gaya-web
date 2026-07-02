@@ -62,14 +62,14 @@ export default function Footer() {
             <h4 className="font-bold text-foreground mb-4">Legal</h4>
             <ul className="space-y-3 text-xs text-foreground font-medium">
               <li>
-                <span className="text-muted-foreground">
-                  Privacy Policy
-                </span>
+                <Link to="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Kebijakan Privasi
+                </Link>
               </li>
               <li>
-                <span className="text-muted-foreground">
-                  Terms of Service
-                </span>
+                <Link to="/terms" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Syarat & Ketentuan
+                </Link>
               </li>
             </ul>
           </div>

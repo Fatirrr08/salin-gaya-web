@@ -62,6 +62,13 @@ service cloud.firestore {
       allow write: if isAuthenticated() && request.auth.uid == cartId;
     }
 
+    // 5. PLATFORM REVIEWS
+    match /platformReviews/{reviewId} {
+      allow read: if true; // Semua orang bisa membaca ulasan di halaman depan
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
     // Default Fallback: Tolak semua yang tidak didefinisikan secara spesifik
     match /{document=**} {
       allow read, write: if false;

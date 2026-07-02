@@ -5,7 +5,6 @@ import Navbar from "@/frontend/components/layout/Navbar";
 import {
   auth,
   googleProvider,
-  facebookProvider,
   db,
 } from "@/backend/config/firebase";
 import {
@@ -13,6 +12,7 @@ import {
   signInWithPopup,
   updateProfile,
   User,
+  getAdditionalUserInfo
 } from "firebase/auth";
 import {
   ref,
@@ -20,11 +20,15 @@ import {
   child,
   set,
   remove,
+  query,
+  orderByChild,
+  equalTo
 } from "firebase/database";
 import { toast } from "sonner";
 import emailjs from "@emailjs/browser";
 import { generateSixDigitOTP } from "@/backend/services/authService";
 import { translateAuthError } from "@/lib/utils";
+import { ShoppingBag, Store, CheckCircle2 } from "lucide-react";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -34,7 +38,7 @@ export default function RegisterPage() {
   const [role, setRole] = useState("Pembeli");
   const [isLoading, setIsLoading] = useState(false);
   const [showOtpInput, setShowOtpInput] = useState(false);
-  const [otp, setOtp] = useState("");
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [countdown, setCountdown] = useState(0);
 
   const [showRoleModal, setShowRoleModal] = useState(false);
@@ -67,8 +71,10 @@ export default function RegisterPage() {
 
       const dbRef = ref(db);
       const snapshot = await get(child(dbRef, `users/${user.uid}`));
+      const additionalUserInfo = getAdditionalUserInfo(result);
+      const isNewAuthUser = additionalUserInfo?.isNewUser;
 
-      if (!snapshot.exists()) {
+      if (!snapshot.exists() || isNewAuthUser) {
         setPendingUser(user);
         setShowRoleModal(true);
         setIsLoading(false);
@@ -172,12 +178,30 @@ Terima kasih telah mempercayakan gaya Anda pada kami!
 
     setIsLoading(true);
     try {
+      // Periksa apakah email sudah terdaftar
+      const emailQuery = query(ref(db, "users"), orderByChild("email"), equalTo(email));
+      const emailSnapshot = await get(emailQuery);
+      if (emailSnapshot.exists()) {
+        toast.error("Email sudah terdaftar. Silakan gunakan email lain.");
+        setIsLoading(false);
+        return;
+      }
+
       if (verificationMethod === "phone") {
         const formattedPhone = phone.startsWith("0")
           ? `+62${phone.slice(1)}`
           : phone.startsWith("+")
             ? phone
             : `+62${phone}`;
+
+        // Periksa apakah nomor HP sudah terdaftar
+        const phoneQuery = query(ref(db, "users"), orderByChild("phone"), equalTo(formattedPhone));
+        const phoneSnapshot = await get(phoneQuery);
+        if (phoneSnapshot.exists()) {
+          toast.error("Nomor HP sudah terdaftar. Silakan gunakan nomor lain.");
+          setIsLoading(false);
+          return;
+        }
 
         const otpCode = generateSixDigitOTP();
         const expiresAt = new Date().getTime() + 5 * 60 * 1000;
@@ -245,9 +269,29 @@ Terima kasih telah mempercayakan gaya Anda pada kami!
     }
   };
 
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^[0-9]*$/.test(value)) return;
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+
+    if (value && index < 5) {
+      const nextInput = document.getElementById(`otp-register-${index + 1}`);
+      nextInput?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      const prevInput = document.getElementById(`otp-register-${index - 1}`);
+      prevInput?.focus();
+    }
+  };
+
   const handleVerifyOtpAndRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp) return;
+    const otpValue = otp.join("");
+    if (otpValue.length !== 6) return;
 
     setIsLoading(true);
     try {
@@ -263,7 +307,7 @@ Terima kasih telah mempercayakan gaya Anda pada kami!
       const sessionData = snapshot.val();
       const now = new Date().getTime();
 
-      if (sessionData.code !== otp || now > sessionData.expiresAt) {
+      if (sessionData.code !== otpValue || now > sessionData.expiresAt) {
         toast.error("Kode OTP salah atau telah kadaluarsa");
         setIsLoading(false);
         return;
@@ -482,31 +526,25 @@ Terima kasih telah mempercayakan gaya Anda pada kami!
                   Ubah {verificationMethod === "phone" ? "Nomor" : "Email"}
                 </button>
               </div>
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">
-                  Kode OTP (6 Digit)
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="Masukkan 6 angka OTP"
-                  value={otp}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    // Only update if the value consists of digits
-                    if (/^\d*$/.test(val)) {
-                      setOtp(val);
-                    }
-                  }}
-                  disabled={isLoading}
-                  maxLength={6}
-                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-base font-medium text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary outline-none text-center tracking-widest transition-all"
-                />
+              <div className="flex justify-center gap-2 mb-6">
+                {otp.map((digit, index) => (
+                  <input
+                    key={index}
+                    id={`otp-register-${index}`}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(index, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                    disabled={isLoading}
+                    className="w-12 h-14 text-center text-xl font-bold rounded-xl border border-[#EBE5D9] focus:border-[#5C3A21] focus:ring-1 focus:ring-[#5C3A21] outline-none transition-all bg-[#F9F6F0]"
+                  />
+                ))}
               </div>
               <button
                 type="submit"
-                disabled={isLoading || otp.length !== 6}
+                disabled={isLoading || otp.join("").length !== 6}
                 className="w-full py-2.5 bg-primary text-primary-foreground font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {isLoading ? "Memverifikasi..." : "Verifikasi & Selesai"}
@@ -549,7 +587,7 @@ Terima kasih telah mempercayakan gaya Anda pada kami!
               <img src="/images/oauth-google.png" alt="Google" className="w-[42px] h-[42px] object-contain mix-blend-multiply scale-110" />
             </button>
             <button
-              onClick={() => handleSocialLogin(facebookProvider)}
+              onClick={() => toast.info("Daftar dengan Facebook sedang dalam perbaikan (Maintenance).")}
               disabled={isLoading}
               className="flex-1 h-12 border border-border rounded-xl flex items-center justify-center bg-white hover:bg-secondary transition-all hover:-translate-y-0.5 hover:shadow-sm disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
             >
@@ -587,19 +625,30 @@ Terima kasih telah mempercayakan gaya Anda pada kami!
               Apakah Anda ingin mendaftar sebagai Pembeli atau Penjual?
             </p>
 
-            <div className="space-y-3">
-              <button
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div
                 onClick={() => handleRoleSelection("Pembeli")}
-                className="w-full py-3 bg-secondary text-secondary-foreground font-medium rounded-lg hover:bg-primary/10 hover:text-primary transition-colors border border-border"
+                className="relative p-4 rounded-xl border-2 cursor-pointer flex flex-col items-center gap-2 transition-all border-border hover:border-primary/40 hover:bg-secondary/50"
               >
-                Saya Pembeli
-              </button>
-              <button
+                <div className="p-3 rounded-full bg-secondary text-muted-foreground">
+                  <ShoppingBag className="w-6 h-6" />
+                </div>
+                <div className="text-center">
+                  <span className="block font-bold text-foreground">Pembeli</span>
+                </div>
+              </div>
+
+              <div
                 onClick={() => handleRoleSelection("Penjual")}
-                className="w-full py-3 bg-secondary text-secondary-foreground font-medium rounded-lg hover:bg-primary/10 hover:text-primary transition-colors border border-border"
+                className="relative p-4 rounded-xl border-2 cursor-pointer flex flex-col items-center gap-2 transition-all border-border hover:border-primary/40 hover:bg-secondary/50"
               >
-                Saya Penjual (Buka Toko)
-              </button>
+                <div className="p-3 rounded-full bg-secondary text-muted-foreground">
+                  <Store className="w-6 h-6" />
+                </div>
+                <div className="text-center">
+                  <span className="block font-bold text-foreground">Penjual</span>
+                </div>
+              </div>
             </div>
 
             <button

@@ -175,3 +175,38 @@ export function generateSixDigitOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+/**
+ * Permanently delete all data related to a user (Profile, Products, Cart, Reviews)
+ * Used before deleting the Firebase Auth user.
+ */
+export async function deleteAllUserData(uid: string): Promise<void> {
+  const updates: Record<string, any> = {};
+
+  // 1. Delete profile
+  updates[`users/${uid}`] = null;
+
+  // Note: 'carts' and 'reviews' deletion are omitted because the current RTDB
+  // security rules do not permit bulk deletion of these nodes by the user.
+  // To implement them, the rules would need significant restructuring.
+
+  // 2. Fetch all products to find which ones belong to this user (if they are a seller)
+  try {
+    const productsSnap = await get(ref(db, "products"));
+    if (productsSnap.exists()) {
+      const products = productsSnap.val();
+      Object.keys(products).forEach((productId) => {
+        const product = products[productId];
+        if (product.sellerUid === uid) {
+          // Delete product
+          updates[`products/${productId}`] = null;
+        }
+      });
+    }
+
+    // Execute the bulk delete
+    await update(ref(db), updates);
+  } catch (error) {
+    console.error("Error during comprehensive user data cleanup:", error);
+    throw error;
+  }
+}

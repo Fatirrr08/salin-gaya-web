@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from "react-router-dom";
-import { Minus, Plus, Trash2, ShoppingBag, ArrowRight } from "lucide-react";
+import { Trash2, ShoppingBag, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import Navbar from "@/frontend/components/layout/Navbar";
 import Footer from "@/frontend/components/layout/Footer";
